@@ -1,0 +1,374 @@
+// Mondy's Kitchen POS — Phase 1 Schema
+// Prisma 7 / PostgreSQL (Neon)
+//
+// Design principles:
+// 1. Snapshot historical prices onto OrderItem / OrderItemModifier so reports stay accurate
+//    when menu prices change later.
+// 2. Money stored as Decimal(10,2) — never Float (floating point + money = bugs).
+// 3. Every order links to the Staff member who rang it up (accountability).
+// 4. Soft-delete via isActive flags on Menu items / Staff so historical orders never break.
+// 5. Cuid IDs everywhere — short, URL-safe, no collision risk.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MENU
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  menuItems   MenuItem[]
+
+  @@index([sortOrder])
+}
+
+model MenuItem {
+  id              String   @id @default(cuid())
+  categoryId      String
+  name            String
+  description     String?
+  price           Decimal  @db.Decimal(10, 2)
+  imageUrl        String?
+  prepTimeMinutes Int      @default(10)
+  isAvailable     Boolean  @default(true) // toggle off when sold out
+  availableUntil  DateTime? // optional: hide item after this date (e.g. seasonal special)
+  isActive        Boolean  @default(true) // soft delete
+  sortOrder       Int      @default(0)
+  taxable         Boolean  @default(true) // some items (e.g. certain groceries) may be non-taxable
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category        Category                @relation(fields: [categoryId], references: [id])
+  modifierGroups  MenuItemModifierGroup[]
+  orderItems      OrderItem[]
+
+  @@index([categoryId])
+  @@index([isAvailable, isActive])
+}
+
+model ModifierGroup {
+  id           String   @id @default(cuid())
+  name         String                 // "Choose a side", "Spice level"
+  isRequired   Boolean  @default(false)
+  minSelect    Int      @default(0)   // e.g. 1 for required single-select
+  maxSelect    Int      @default(1)   // e.g. 3 for "pick up to 3 toppings"
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  modifiers    Modifier[]
+  menuItems    MenuItemModifierGroup[]
+}
+
+model Modifier {
+  id              String   @id @default(cuid())
+  modifierGroupId String
+  name            String                       // "Plantains", "Mild", "Extra cheese"
+  priceAdjustment Decimal  @db.Decimal(10, 2) @default(0) // can be 0, positive, or negative
+  sortOrder       Int      @default(0)
+  isAvailable     Boolean  @default(true)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  modifierGroup   ModifierGroup        @relation(fields: [modifierGroupId], references: [id])
+  orderItems      OrderItemModifier[]
+
+  @@index([modifierGroupId])
+}
+
+// Junction: a modifier group can attach to multiple menu items.
+model MenuItemModifierGroup {
+  menuItemId       String
+  modifierGroupId  String
+  sortOrder        Int    @default(0)
+
+  menuItem         MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierGroup    ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  @@id([menuItemId, modifierGroupId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ORDERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum OrderType {
+  DINE_IN
+  TAKEOUT
+}
+
+enum OrderStatus {
+  OPEN        // being built at the POS
+  SENT        // sent to kitchen
+  READY       // kitchen says it's ready
+  COMPLETED   // delivered / picked up + paid
+  VOIDED      // cancelled (audit trail kept)
+}
+
+model Order {
+  id              String       @id @default(cuid())
+  orderNumber     Int          @unique @default(autoincrement()) // human-friendly: #1042
+  staffId         String
+  shiftId         String?
+  tableId         String?      // null for takeout
+  orderType       OrderType
+  status          OrderStatus  @default(OPEN)
+  customerName    String?      // for takeout call-outs ("Order for Marie")
+  customerPhone   String?
+
+  // Money snapshot — totals computed at checkout and stored.
+  subtotal        Decimal      @db.Decimal(10, 2) @default(0)
+  discountAmount  Decimal      @db.Decimal(10, 2) @default(0)
+  taxAmount       Decimal      @db.Decimal(10, 2) @default(0)
+  tipAmount       Decimal      @db.Decimal(10, 2) @default(0)
+  total           Decimal      @db.Decimal(10, 2) @default(0)
+  taxExempt       Boolean      @default(false)
+  taxExemptReason String?      // "Non-profit", "Resale cert #..." — required if taxExempt
+
+  notes           String?
+  voidedReason    String?
+  voidedAt        DateTime?
+  voidedByStaffId String?
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  completedAt     DateTime?
+
+  staff           Staff             @relation(fields: [staffId], references: [id])
+  shift           Shift?            @relation(fields: [shiftId], references: [id])
+  table           Table?            @relation(fields: [tableId], references: [id])
+  items           OrderItem[]
+  payments        Payment[]
+  discounts       OrderDiscount[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([staffId])
+}
+
+model OrderItem {
+  id           String   @id @default(cuid())
+  orderId      String
+  menuItemId   String
+  quantity     Int      @default(1)
+  unitPrice    Decimal  @db.Decimal(10, 2) // SNAPSHOT — price at the moment of ordering
+  nameSnapshot String                       // SNAPSHOT — name at moment of ordering
+  notes        String?                      // "no onions", "well done"
+  lineTotal    Decimal  @db.Decimal(10, 2) // (unitPrice + sum(modifier prices)) * quantity
+  createdAt    DateTime @default(now())
+
+  order        Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem     MenuItem            @relation(fields: [menuItemId], references: [id])
+  modifiers    OrderItemModifier[]
+
+  @@index([orderId])
+}
+
+model OrderItemModifier {
+  id              String   @id @default(cuid())
+  orderItemId     String
+  modifierId      String
+  nameSnapshot    String                       // SNAPSHOT
+  priceAtTime     Decimal  @db.Decimal(10, 2) // SNAPSHOT
+
+  orderItem       OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifier        Modifier  @relation(fields: [modifierId], references: [id])
+
+  @@index([orderItemId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DISCOUNTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DiscountType {
+  PERCENT          // 10% off
+  FIXED_AMOUNT     // $5 off
+  COMP             // manager comp — full or partial, requires reason
+}
+
+enum DiscountScope {
+  ORDER            // applies to whole order subtotal
+  ITEM             // (future) applies to a specific OrderItem
+}
+
+model Discount {
+  id          String        @id @default(cuid())
+  code        String        @unique          // e.g. "STAFF10", "OPENING"
+  name        String                          // "Staff discount", "Grand opening"
+  type        DiscountType
+  scope       DiscountScope @default(ORDER)
+  value       Decimal       @db.Decimal(10, 2) // 10.00 for 10% or $10 depending on type
+  requiresManager Boolean   @default(false)   // PIN gate
+  isActive    Boolean       @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  applications OrderDiscount[]
+}
+
+// One order can have multiple stacked discounts (rare but legal — e.g. coupon + comp).
+model OrderDiscount {
+  id              String   @id @default(cuid())
+  orderId         String
+  discountId      String
+  amountApplied   Decimal  @db.Decimal(10, 2) // computed value at time of application
+  reason          String?                       // required for COMP type
+  appliedByStaffId String
+  createdAt       DateTime @default(now())
+
+  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  discount Discount @relation(fields: [discountId], references: [id])
+
+  @@index([orderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAYMENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PaymentMethod {
+  CASH
+  CARD_PRESENT      // chip/tap/swipe via Epos Now terminal
+  CARD_MANUAL       // keyed in (phone orders, card not present)
+  MOBILE_WALLET     // Apple Pay / Google Pay / Samsung Pay (via Epos Now)
+  GIFT_CARD         // store gift card
+  STORE_CREDIT      // refund-to-credit balance
+  CASH_APP          // Cash App / Venmo / Zelle — manual confirmation
+  CHECK             // rare but happens (catering, B2B)
+  PI_NETWORK        // future: pay with Pi (you'd be the first restaurant)
+  HOUSE_ACCOUNT     // staff meal / owner comp tracked separately
+  OTHER             // safety valve
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+  FAILED
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  orderId         String
+  method          PaymentMethod
+  status          PaymentStatus @default(COMPLETED)
+  amount          Decimal       @db.Decimal(10, 2) // amount applied to the order
+  tendered        Decimal?      @db.Decimal(10, 2) // cash given by customer (CASH only)
+  changeGiven     Decimal?      @db.Decimal(10, 2) // CASH only
+  cardLast4       String?                            // CARD only
+  cardBrand       String?                            // "Visa", "Mastercard"
+  processorRef    String?                            // Epos Now transaction id
+  processedAt     DateTime      @default(now())
+  refundedAt      DateTime?
+  refundReason    String?
+
+  order           Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([processedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STAFF & SHIFTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum StaffRole {
+  OWNER       // full access (you)
+  MANAGER     // can comp, void, run reports, override
+  CASHIER     // can take orders, accept payment
+}
+
+model Staff {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String
+  pinHash     String                  // bcrypt of 4-6 digit PIN for terminal login
+  passwordHash String?                // for web admin / reports login (managers+)
+  role        StaffRole @default(CASHIER)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  orders      Order[]
+  shifts      Shift[]
+}
+
+model Shift {
+  id            String    @id @default(cuid())
+  staffId       String
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  openingCash   Decimal   @db.Decimal(10, 2)
+  closingCash   Decimal?  @db.Decimal(10, 2)
+  expectedCash  Decimal?  @db.Decimal(10, 2) // computed: opening + cash payments - refunds
+  variance      Decimal?  @db.Decimal(10, 2) // closing - expected (negative = short)
+  notes         String?
+
+  staff         Staff     @relation(fields: [staffId], references: [id])
+  orders        Order[]
+
+  @@index([staffId])
+  @@index([startedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TABLES
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  OUT_OF_SERVICE
+}
+
+model Table {
+  id        String      @id @default(cuid())
+  number    Int         @unique
+  label     String?                       // "Patio 1", "Window booth"
+  capacity  Int         @default(4)
+  status    TableStatus @default(AVAILABLE)
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  orders    Order[]
+
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS (single-row config table)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model RestaurantSettings {
+  id              String   @id @default(cuid())
+  name            String   @default("Mondy's Kitchen")
+  address         String?
+  phone           String?
+  email           String?
+  taxRate         Decimal  @db.Decimal(5, 4) @default(0.0625) // MA = 6.25%; tune as needed
+  currency        String   @default("USD")
+  receiptFooter   String?
+  logoUrl         String?
+  timezone        String   @default("America/New_York")
+  updatedAt       DateTime @updatedAt
+}

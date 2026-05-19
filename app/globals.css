@@ -1,26 +1,48 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Mondy's Kitchen brand tokens */
+  --color-mondy-red: #c8202e;
+  --color-mondy-red-dark: #9a1b1b;
+  --color-mondy-red-soft: #e85c66;
+  --color-mondy-yellow: #f4c842;
+  --color-mondy-yellow-soft: #f8d661;
+  --color-mondy-yellow-deep: #e8b021;
+  --color-mondy-cream: #fef9ec;
+  --color-mondy-ink: #1a1410;
+  --color-mondy-muted: #8b7e6f;
+  --color-mondy-border: #e8d9b8;
+
+  /* Fonts (loaded via next/font in layout.tsx) */
+  --font-display: var(--font-fraunces);
+  --font-sans: var(--font-dm-sans);
+
+  /* Animation timings */
+  --ease-mondy: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Base resets and global styles */
+html,
+body {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-mondy-cream);
+  color: var(--color-mondy-ink);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Disable iOS tap highlight — distracting on touchscreen POS */
+button,
+a,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Numeric tabular figures for prices and PIN digits */
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
