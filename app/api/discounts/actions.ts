@@ -13,9 +13,6 @@ export type ActiveDiscount = {
   requiresManager: boolean;
 };
 
-// Infer the row type from Prisma's own return type — version-safe across Prisma upgrades
-type DiscountRow = Awaited<ReturnType<typeof prisma.discount.findMany>>[number];
-
 export async function getActiveDiscounts(): Promise<ActiveDiscount[]> {
   const now = new Date();
   const rows = await prisma.discount.findMany({
@@ -28,7 +25,7 @@ export async function getActiveDiscounts(): Promise<ActiveDiscount[]> {
     },
     orderBy: { name: "asc" },
   });
-  return rows.map((r: DiscountRow) => ({
+  return rows.map((r) => ({
     id: r.id,
     code: r.code,
     name: r.name,
