@@ -2,6 +2,7 @@
 
 import bcrypt from "bcryptjs";
 import { z } from "zod";
+import type { Discount } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type ActiveDiscount = {
@@ -25,7 +26,7 @@ export async function getActiveDiscounts(): Promise<ActiveDiscount[]> {
     },
     orderBy: { name: "asc" },
   });
-  return rows.map((r) => ({
+  return rows.map((r: Discount) => ({
     id: r.id,
     code: r.code,
     name: r.name,
