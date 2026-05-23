@@ -25,6 +25,9 @@ type Props = {
   staffName: string;
   staffRole: string;
   signOutAction: () => Promise<void>;
+  logoUrl: string | null;
+  hasOpenShift: boolean;
+  shiftStartedAt: Date | string | null;
 };
 
 export function CashierShell({
@@ -35,6 +38,9 @@ export function CashierShell({
   staffName,
   staffRole,
   signOutAction,
+  logoUrl,
+  hasOpenShift,
+  shiftStartedAt,
 }: Props) {
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(
     categories[0]?.id ?? null,
@@ -58,6 +64,9 @@ export function CashierShell({
           searchValue={searchValue}
           onSearchChange={setSearchValue}
           signOutAction={signOutAction}
+          logoUrl={logoUrl}
+          hasOpenShift={hasOpenShift}
+          shiftStartedAt={shiftStartedAt}
         />
 
         <div className="flex min-h-0 flex-1">

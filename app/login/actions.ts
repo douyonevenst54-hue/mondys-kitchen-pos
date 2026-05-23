@@ -14,21 +14,54 @@ const PinSchema = z.object({
     .regex(/^\d+$/, "PIN must be digits only"),
 });
 
-export type PinLoginResult =
-  | { ok: true }
-  | { ok: false; error: string };
+export type PinLoginResult = { ok: true } | { ok: false; error: string };
+
+async function setSessionCookie(
+  staffId: string,
+  name: string,
+  role: string,
+  hasOpenShift: boolean,
+) {
+  const cookieStore = await cookies();
+  cookieStore.set(
+    "mondy_session",
+    JSON.stringify({ staffId, name, role, hasOpenShift }),
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 12, // 12 hours — covers a full shift
+    },
+  );
+}
 
 /**
- * Verify a staff PIN and create a session.
- *
- * Security notes:
- * - PINs are bcrypt-hashed in DB; we iterate over active staff and compare.
- *   This is acceptable for a small staff (≤50). For larger scale we'd add
- *   a non-hashed staffId hint or use a different scheme.
- * - Failed attempts are NOT rate-limited yet; add this before going live.
- * - Session cookie is httpOnly + sameSite=lax. For a self-hosted POS on a
- *   trusted LAN this is sufficient; we'll add CSRF protection at checkout.
+ * Re-issue the session cookie with an updated hasOpenShift flag. Called
+ * after openShift / closeShift server actions so subsequent navigation
+ * sees the updated state without a full re-login.
  */
+export async function refreshSessionShiftState(hasOpenShift: boolean) {
+  const cookieStore = await cookies();
+  const raw = cookieStore.get("mondy_session")?.value;
+  if (!raw) return;
+  try {
+    const session = JSON.parse(raw) as {
+      staffId: string;
+      name: string;
+      role: string;
+    };
+    await setSessionCookie(
+      session.staffId,
+      session.name,
+      session.role,
+      hasOpenShift,
+    );
+  } catch {
+    // Corrupted; ignore
+  }
+}
+
 export async function loginWithPin(formData: FormData): Promise<PinLoginResult> {
   const parsed = PinSchema.safeParse({ pin: formData.get("pin") });
   if (!parsed.success) {
@@ -37,7 +70,6 @@ export async function loginWithPin(formData: FormData): Promise<PinLoginResult> 
 
   const { pin } = parsed.data;
 
-  // Pull only active staff. Small list, so iterating to bcrypt-compare is fine.
   const activeStaff = await prisma.staff.findMany({
     where: { isActive: true },
     select: { id: true, name: true, role: true, pinHash: true },
@@ -55,20 +87,24 @@ export async function loginWithPin(formData: FormData): Promise<PinLoginResult> 
     return { ok: false, error: "Incorrect PIN" };
   }
 
-  // Minimal session — just enough to identify the user.
-  // Phase 2 will move to NextAuth for proper session signing.
-  const cookieStore = await cookies();
-  cookieStore.set(
-    "mondy_session",
-    JSON.stringify({ staffId: matched.id, name: matched.name, role: matched.role }),
-    {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 12, // 12 hours — covers a full shift
-    },
+  // Check shift status server-side so we know where to send them.
+  const openShift = await prisma.shift.findFirst({
+    where: { staffId: matched.id, endedAt: null },
+    select: { id: true },
+  });
+
+  await setSessionCookie(
+    matched.id,
+    matched.name,
+    matched.role,
+    Boolean(openShift),
   );
+
+  // CASHIER without an open shift → force them through the open-shift flow.
+  // Managers/owners can skip and go straight to the home page.
+  if (matched.role === "CASHIER" && !openShift) {
+    redirect("/shift/open");
+  }
 
   redirect("/");
 }

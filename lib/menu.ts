@@ -63,9 +63,15 @@ export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
 export async function getSettings() {
   const settings = await prisma.restaurantSettings.findFirst();
   return {
+    name: settings?.name ?? "Mondy's Kitchen",
+    address: settings?.address ?? null,
+    phone: settings?.phone ?? null,
+    email: settings?.email ?? null,
     taxRate: settings ? Number(settings.taxRate) : 0.0625,
     currency: settings?.currency ?? "USD",
-    name: settings?.name ?? "Mondy's Kitchen",
+    receiptFooter:
+      settings?.receiptFooter ?? "Thank you for dining with Mondy's Kitchen!",
+    timezone: settings?.timezone ?? "America/New_York",
   };
 }
 

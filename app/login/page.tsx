@@ -1,4 +1,4 @@
-import { MondysEmblem } from "@/components/login/MondysEmblem";
+import { MondysLogo } from "@/components/login/MondysLogo";
 import { PinKeypad } from "@/components/login/PinKeypad";
 
 export default function LoginPage() {
@@ -9,10 +9,15 @@ export default function LoginPage() {
         aria-hidden
         className="absolute inset-0 bg-gradient-to-br from-mondy-yellow-soft via-mondy-yellow to-mondy-yellow-deep"
       />
-      {/* Corner red wedge from the original logo background — subtle, decorative */}
+      {/* Soft red corner glow — echoes the brand asset's bottom-right warmth */}
       <div
         aria-hidden
-        className="absolute -bottom-24 -right-24 h-72 w-72 rotate-12 rounded-3xl bg-mondy-red-dark opacity-90 blur-[2px]"
+        className="pointer-events-none absolute bottom-0 right-0 h-[60vh] w-[60vh] translate-x-1/3 translate-y-1/3 rounded-full bg-mondy-red-dark/40 blur-3xl"
+      />
+      {/* Slim red bottom band — anchors the page like a plate's edge */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-1.5 bg-gradient-to-r from-mondy-red-dark/0 via-mondy-red-dark/70 to-mondy-red-dark/0"
       />
       {/* Grain texture for warmth (CSS-only noise) */}
       <div
@@ -28,7 +33,7 @@ export default function LoginPage() {
         {/* Brand side — top on mobile/tablet, left on desktop */}
         <section className="flex flex-1 flex-col items-center justify-center px-8 pt-14 pb-8 lg:pt-24 lg:pb-24">
           <div className="flex flex-col items-center text-center text-mondy-red animate-rise">
-            <MondysEmblem className="text-mondy-red drop-shadow-sm" size={140} />
+            <MondysLogo className="text-mondy-red drop-shadow-sm" size={72} />
             <h1 className="mt-4 font-display text-6xl font-black tracking-tight leading-[0.95] sm:text-7xl">
               MONDY&apos;S
             </h1>
@@ -47,7 +52,7 @@ export default function LoginPage() {
 
         {/* Keypad side */}
         <section className="flex flex-1 items-start justify-center px-6 pb-12 lg:items-center lg:pb-0">
-          <div className="w-full max-w-sm rounded-3xl bg-white/30 p-6 backdrop-blur-sm ring-1 ring-white/40 shadow-xl animate-rise-delayed sm:p-8">
+          <div className="w-full max-w-sm rounded-3xl bg-white/85 p-6 backdrop-blur-md ring-1 ring-white/60 shadow-2xl animate-rise-delayed sm:p-8">
             <header className="mb-5 text-center">
               <p className="font-sans text-xs font-medium uppercase tracking-[0.24em] text-mondy-red-dark">
                 Staff Sign In

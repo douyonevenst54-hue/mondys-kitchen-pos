@@ -1,7 +1,9 @@
 "use client";
 
-import { Search, LogOut, User } from "lucide-react";
+import Image from "next/image";
+import { Search, LogOut, User, Clock, Receipt } from "lucide-react";
 import { useState } from "react";
+import { ShiftStatus } from "./ShiftStatus";
 
 type Props = {
   staffName: string;
@@ -9,6 +11,9 @@ type Props = {
   searchValue: string;
   onSearchChange: (value: string) => void;
   signOutAction: () => Promise<void>;
+  logoUrl: string | null;
+  hasOpenShift: boolean;
+  shiftStartedAt: Date | string | null;
 };
 
 export function TopBar({
@@ -17,6 +22,9 @@ export function TopBar({
   searchValue,
   onSearchChange,
   signOutAction,
+  logoUrl,
+  hasOpenShift,
+  shiftStartedAt,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -24,14 +32,25 @@ export function TopBar({
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-mondy-border bg-white px-3 sm:gap-4 sm:px-5">
       {/* Wordmark */}
       <div className="flex items-center gap-2">
-        <div
-          aria-hidden
-          className="grid h-9 w-9 place-items-center rounded-xl bg-mondy-yellow shadow-inner ring-1 ring-mondy-yellow-deep/30"
-        >
-          <span className="font-display text-lg font-black leading-none text-mondy-red">
-            M
-          </span>
-        </div>
+        {logoUrl ? (
+          <Image
+            src={logoUrl}
+            alt="Mondy's Kitchen"
+            width={36}
+            height={36}
+            priority
+            className="h-9 w-9 object-contain"
+          />
+        ) : (
+          <div
+            aria-hidden
+            className="grid h-9 w-9 place-items-center rounded-xl bg-mondy-yellow shadow-inner ring-1 ring-mondy-yellow-deep/30"
+          >
+            <span className="font-display text-lg font-black leading-none text-mondy-red">
+              M
+            </span>
+          </div>
+        )}
         <div className="hidden flex-col leading-none sm:flex">
           <span className="font-display text-base font-black text-mondy-red">
             MONDY&apos;S
@@ -56,6 +75,12 @@ export function TopBar({
           className="h-10 w-full rounded-xl bg-mondy-cream pl-9 pr-3 font-sans text-sm text-mondy-ink placeholder:text-mondy-muted focus:bg-white focus:outline-none focus:ring-2 focus:ring-mondy-red/40"
         />
       </div>
+
+      {/* Shift status chip */}
+      <ShiftStatus
+        hasOpenShift={hasOpenShift}
+        startedAt={shiftStartedAt}
+      />
 
       {/* Staff badge + menu */}
       <div className="relative">
@@ -97,6 +122,31 @@ export function TopBar({
                   {staffRole}
                 </p>
               </div>
+              {hasOpenShift && (
+                <a
+                  href="/shift/close"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <Clock className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Close shift
+                </a>
+              )}
+              {!hasOpenShift && (
+                <a
+                  href="/shift/open"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <Clock className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Open shift
+                </a>
+              )}
+              <a
+                href="/orders"
+                className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+              >
+                <Receipt className="h-4 w-4 text-mondy-muted" aria-hidden />
+                Orders
+              </a>
               <form action={signOutAction}>
                 <button
                   type="submit"

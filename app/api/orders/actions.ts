@@ -1,8 +1,17 @@
 "use server";
 
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { refreshSessionShiftState } from "@/app/login/actions";
+
+export async function logoutAndRedirect() {
+  const c = await cookies();
+  c.delete("mondy_session");
+  redirect("/login");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schemas
@@ -186,8 +195,81 @@ export async function submitCheckout(input: CheckoutInput) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shifts
+// Void order (manager-PIN gated)
 // ─────────────────────────────────────────────────────────────────────────────
+
+const VoidSchema = z.object({
+  orderId: z.string(),
+  reason: z.string().min(3, "Reason required (at least 3 characters)"),
+  managerPin: z.string().regex(/^\d{4,8}$/),
+});
+
+export async function voidOrder(
+  orderId: string,
+  reason: string,
+  managerPin: string,
+) {
+  const session = await requireSession();
+  const parsed = VoidSchema.safeParse({ orderId, reason, managerPin });
+  if (!parsed.success) {
+    return {
+      ok: false as const,
+      error: parsed.error.issues[0]?.message ?? "Invalid void request",
+    };
+  }
+
+  // Verify the PIN belongs to an OWNER or MANAGER
+  const candidates = await prisma.staff.findMany({
+    where: { isActive: true, role: { in: ["OWNER", "MANAGER"] } },
+    select: { id: true, name: true, pinHash: true },
+  });
+  let manager: { id: string; name: string } | null = null;
+  for (const c of candidates) {
+    if (await bcrypt.compare(parsed.data.managerPin, c.pinHash)) {
+      manager = { id: c.id, name: c.name };
+      break;
+    }
+  }
+  if (!manager) {
+    return { ok: false as const, error: "Not a manager PIN" };
+  }
+
+  const order = await prisma.order.findUnique({
+    where: { id: parsed.data.orderId },
+    select: { id: true, status: true },
+  });
+  if (!order) {
+    return { ok: false as const, error: "Order not found" };
+  }
+  if (order.status === "VOIDED") {
+    return { ok: false as const, error: "Order is already voided" };
+  }
+
+  await prisma.$transaction([
+    prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: "VOIDED",
+        voidedAt: new Date(),
+        voidedReason: parsed.data.reason,
+        voidedByStaffId: manager.id,
+      },
+    }),
+    prisma.payment.updateMany({
+      where: { orderId: order.id, status: "COMPLETED" },
+      data: {
+        status: "REFUNDED",
+        refundedAt: new Date(),
+        refundReason: parsed.data.reason,
+      },
+    }),
+  ]);
+
+  return {
+    ok: true as const,
+    voidedByName: manager.name,
+  };
+}
 
 export async function getCurrentShift(staffId: string) {
   const shift = await prisma.shift.findFirst({
@@ -224,6 +306,10 @@ export async function openShift(openingCash: number) {
       openingCash: parsed.data.openingCash,
     },
   });
+
+  // Refresh the session cookie so the proxy knows there's now an open shift.
+  await refreshSessionShiftState(true);
+
   return { ok: true as const, shiftId: shift.id };
 }
 
@@ -275,9 +361,15 @@ export async function closeShift(
     },
   });
 
+  // Refresh session cookie — no more open shift.
+  await refreshSessionShiftState(false);
+
   return {
     ok: true as const,
     expected,
+    cashIn,
+    openingCash: Number(shift.openingCash),
+    closingCash: parsed.data.closingCash,
     variance,
   };
 }

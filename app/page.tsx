@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { getMenuForCashier, getSettings, getActiveTables } from "@/lib/menu";
 import { CashierShell } from "@/components/cashier/CashierShell";
 import { logout } from "@/app/login/actions";
+import { resolveLogoUrl } from "@/lib/logo";
+import { getCurrentShift } from "@/app/api/orders/actions";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -24,11 +26,13 @@ export default async function HomePage() {
   }
 
   // Parallel-fetch everything the cashier needs at boot.
-  const [categories, tables, settings] = await Promise.all([
+  const [categories, tables, settings, currentShift] = await Promise.all([
     getMenuForCashier(),
     getActiveTables(),
     getSettings(),
+    getCurrentShift(session.staffId),
   ]);
+  const logoUrl = resolveLogoUrl();
 
   return (
     <CashierShell
@@ -39,6 +43,9 @@ export default async function HomePage() {
       staffName={session.name}
       staffRole={session.role}
       signOutAction={logout}
+      logoUrl={logoUrl}
+      hasOpenShift={Boolean(currentShift)}
+      shiftStartedAt={currentShift?.startedAt ?? null}
     />
   );
 }
