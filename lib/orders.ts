@@ -1,6 +1,32 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 
+// Inferred row types from Prisma queries below — version-safe, no type imports needed.
+type ListOrderRow = Awaited<
+  ReturnType<typeof prisma.order.findMany<{
+    include: {
+      staff: { select: { name: true } };
+      table: { select: { number: true } };
+      items: { select: { quantity: true } };
+      payments: {
+        select: { method: true; amount: true };
+        orderBy: { processedAt: "desc" };
+        take: 1;
+      };
+    };
+  }>>
+>[number];
+
+type PaymentGroupRow = Awaited<
+  ReturnType<typeof prisma.payment.groupBy<{
+    by: ["method"];
+    _count: { _all: true };
+    _sum: { amount: true };
+  }>>
+>[number];
+
+type StaffNameRow = { id: string; name: string };
+
 export type OrderListRow = {
   id: string;
   orderNumber: number;
@@ -81,7 +107,7 @@ export async function listOrders(range: OrderRange): Promise<OrderListRow[]> {
     },
   });
 
-  return rows.map((o) => ({
+  return rows.map((o: ListOrderRow) => ({
     id: o.id,
     orderNumber: o.orderNumber,
     orderType: o.orderType,
@@ -92,7 +118,7 @@ export async function listOrders(range: OrderRange): Promise<OrderListRow[]> {
     subtotal: Number(o.subtotal),
     discountAmount: Number(o.discountAmount),
     taxAmount: Number(o.taxAmount),
-    itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
+    itemCount: o.items.reduce((sum: number, i: { quantity: number }) => sum + i.quantity, 0),
     customerName: o.customerName,
     tableNumber: o.table?.number ?? null,
     staffName: o.staff.name,
@@ -142,12 +168,12 @@ export async function getOrderStats(range: OrderRange): Promise<OrderStats> {
     averageTicket: Math.round(averageTicket * 100) / 100,
     voidedCount,
     byPaymentMethod: paymentGroups
-      .map((g) => ({
+      .map((g: PaymentGroupRow) => ({
         method: g.method,
         count: g._count._all,
         total: Math.round(Number(g._sum.amount ?? 0) * 100) / 100,
       }))
-      .sort((a, b) => b.total - a.total),
+      .sort((a: { total: number }, b: { total: number }) => b.total - a.total),
   };
 }
 
@@ -200,6 +226,28 @@ export type OrderDetail = {
   }[];
 };
 
+type OrderDetailRow = NonNullable<
+  Awaited<
+    ReturnType<typeof prisma.order.findUnique<{
+      include: {
+        staff: { select: { name: true } };
+        table: { select: { number: true } };
+        items: true;
+        payments: { orderBy: { processedAt: "asc" } };
+        discounts: {
+          include: {
+            discount: { select: { name: true } };
+          };
+        };
+      };
+    }>>
+  >
+>;
+
+type OrderItemRow = OrderDetailRow["items"][number];
+type OrderPaymentRow = OrderDetailRow["payments"][number];
+type OrderDiscountRow = OrderDetailRow["discounts"][number];
+
 export async function getOrderDetail(orderId: string): Promise<OrderDetail | null> {
   const o = await prisma.order.findUnique({
     where: { id: orderId },
@@ -218,7 +266,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
   if (!o) return null;
 
   // Resolve who applied each discount in a single query for names
-  const appliedByIds = o.discounts.map((d) => d.appliedByStaffId);
+  const appliedByIds = o.discounts.map((d: OrderDiscountRow) => d.appliedByStaffId);
   const appliers =
     appliedByIds.length > 0
       ? await prisma.staff.findMany({
@@ -226,7 +274,9 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
           select: { id: true, name: true },
         })
       : [];
-  const applierById = new Map(appliers.map((s) => [s.id, s.name]));
+  const applierById = new Map(
+    appliers.map((s: StaffNameRow) => [s.id, s.name]),
+  );
 
   return {
     id: o.id,
@@ -249,7 +299,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
     total: Number(o.total),
     taxExempt: o.taxExempt,
     taxExemptReason: o.taxExemptReason,
-    items: o.items.map((i) => ({
+    items: o.items.map((i: OrderItemRow) => ({
       id: i.id,
       name: i.nameSnapshot,
       quantity: i.quantity,
@@ -257,7 +307,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
       lineTotal: Number(i.lineTotal),
       notes: i.notes,
     })),
-    payments: o.payments.map((p) => ({
+    payments: o.payments.map((p: OrderPaymentRow) => ({
       id: p.id,
       method: p.method,
       amount: Number(p.amount),
@@ -268,7 +318,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
       processedAt: p.processedAt,
       status: p.status,
     })),
-    discounts: o.discounts.map((d) => ({
+    discounts: o.discounts.map((d: OrderDiscountRow) => ({
       id: d.id,
       discountName: d.discount.name,
       amountApplied: Number(d.amountApplied),

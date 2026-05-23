@@ -1,6 +1,21 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 
+// Inferred row type from prisma.category.findMany — version-safe.
+type CategoryRow = Awaited<
+  ReturnType<typeof prisma.category.findMany<{
+    include: {
+      menuItems: {
+        include: {
+          modifierGroups: {
+            include: { modifierGroup: { select: { name: true } } };
+          };
+        };
+      };
+    };
+  }>>
+>[number];
+
 export type MenuItemWithModifiers = {
   id: string;
   name: string;
@@ -43,7 +58,7 @@ export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
     },
   });
 
-  return categories.map((c) => ({
+  return categories.map((c: CategoryRow) => ({
     id: c.id,
     name: c.name,
     sortOrder: c.sortOrder,
