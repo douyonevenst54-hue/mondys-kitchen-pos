@@ -2,7 +2,6 @@
 
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import type { Discount } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type ActiveDiscount = {
@@ -13,6 +12,9 @@ export type ActiveDiscount = {
   value: number;
   requiresManager: boolean;
 };
+
+// Infer the row type from Prisma's own return type — version-safe across Prisma upgrades
+type DiscountRow = Awaited<ReturnType<typeof prisma.discount.findMany>>[number];
 
 export async function getActiveDiscounts(): Promise<ActiveDiscount[]> {
   const now = new Date();
@@ -26,7 +28,7 @@ export async function getActiveDiscounts(): Promise<ActiveDiscount[]> {
     },
     orderBy: { name: "asc" },
   });
-  return rows.map((r: Discount) => ({
+  return rows.map((r: DiscountRow) => ({
     id: r.id,
     code: r.code,
     name: r.name,
