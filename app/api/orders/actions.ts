@@ -7,6 +7,10 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { refreshSessionShiftState } from "@/app/login/actions";
 
+// Transaction-scoped Prisma client, inferred from prisma.$transaction's
+// callback signature. Version-safe across Prisma upgrades.
+type PrismaTx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
 export async function logoutAndRedirect() {
   const c = await cookies();
   c.delete("mondy_session");
@@ -110,7 +114,7 @@ export async function submitCheckout(input: CheckoutInput) {
   }
 
   try {
-    const order = await prisma.$transaction(async (tx) => {
+    const order = await prisma.$transaction(async (tx: PrismaTx) => {
       // 1. Find an open shift for this staff (if any) — payments roll into it.
       const openShift = await tx.shift.findFirst({
         where: { staffId: data.staffId, endedAt: null },
