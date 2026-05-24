@@ -195,6 +195,15 @@ export function ReceiptView({ order, settings, logoUrl }: Props) {
           )}
           <div className="my-1 border-t border-dashed border-black/40" />
           <Line label="TOTAL" value={formatMoney(order.total)} bold large />
+
+          {/* Dine-in tip + total write-in lines: only when no POS tip was
+              taken — customer writes the tip on the card slip at the table. */}
+          {order.orderType === "DINE_IN" && order.tipAmount === 0 && (
+            <div className="mt-2 space-y-1.5 pt-1">
+              <WriteInLine label="Tip" />
+              <WriteInLine label="Total" />
+            </div>
+          )}
         </section>
 
         <Divider />
@@ -223,6 +232,29 @@ export function ReceiptView({ order, settings, logoUrl }: Props) {
             </div>
           ))}
         </section>
+
+        {/* Signature line — only when payment was a physical card (chip/swipe
+            or manually keyed). Mobile wallets are biometric-authenticated, so
+            no signature required. Cash, store credit, etc. don't need one. */}
+        {order.payments.some(
+          (p) => p.method === "CARD_PRESENT" || p.method === "CARD_MANUAL",
+        ) && (
+          <>
+            <Divider />
+            <section className="space-y-2 pt-1">
+              <div className="border-b border-black/70 pb-0.5">
+                <span className="text-[14px] font-medium">X</span>
+              </div>
+              <p className="text-center text-[9px] uppercase tracking-widest text-gray-600">
+                Signature
+              </p>
+              <p className="text-center text-[8px] leading-tight text-gray-500">
+                I agree to pay the above total amount according to the card
+                issuer agreement.
+              </p>
+            </section>
+          </>
+        )}
 
         <Divider />
 
@@ -283,6 +315,18 @@ function Line({
           {value}
         </span>
       )}
+    </div>
+  );
+}
+
+// Used on dine-in card slips so the customer can hand-write tip + total.
+function WriteInLine({ label }: { label: string }) {
+  return (
+    <div className="flex items-end gap-2 text-[11px]">
+      <span className="shrink-0 font-medium">{label}:</span>
+      <span className="flex-1 border-b border-black/70" aria-hidden>
+        &nbsp;
+      </span>
     </div>
   );
 }

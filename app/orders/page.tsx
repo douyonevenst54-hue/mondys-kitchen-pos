@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { FileBarChart } from "lucide-react";
 import {
   listOrders,
   getOrderStats,
@@ -61,10 +63,21 @@ export default async function OrdersPage({
       <div className="mx-auto max-w-6xl space-y-5 px-4 py-5 sm:px-6 sm:py-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <RangeSelector current={range} />
-          <p className="font-sans text-xs text-mondy-muted">
-            {orders.length} {orders.length === 1 ? "order" : "orders"} ·{" "}
-            {RANGE_LABELS[range].toLowerCase()}
-          </p>
+          <div className="flex items-center gap-3">
+            {session.role !== "CASHIER" && (
+              <Link
+                href="/reports/daily"
+                className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-sans text-xs font-medium text-mondy-ink ring-1 ring-mondy-border transition hover:bg-mondy-yellow-soft/40"
+              >
+                <FileBarChart className="h-3.5 w-3.5" />
+                Daily report
+              </Link>
+            )}
+            <p className="font-sans text-xs text-mondy-muted">
+              {orders.length} {orders.length === 1 ? "order" : "orders"} ·{" "}
+              {RANGE_LABELS[range].toLowerCase()}
+            </p>
+          </div>
         </div>
 
         <StatsSummary stats={stats} />

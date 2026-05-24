@@ -36,6 +36,47 @@ export type OrderRange = {
   to: Date;
 };
 
+export type DailyReport = {
+  date: Date;
+  // Totals
+  orderCount: number;
+  voidedCount: number;
+  revenue: number;          // total - tips (what the business takes in)
+  tipsTotal: number;        // owed to staff
+  deliveryFeesTotal: number; // included in revenue
+  taxTotal: number;
+  discountTotal: number;
+  // By order type
+  byOrderType: {
+    type: "DINE_IN" | "TAKEOUT" | "DELIVERY";
+    count: number;
+    revenue: number;        // total - tips for this type
+  }[];
+  // By payment method (cash drawer reconciliation)
+  byPaymentMethod: {
+    method: string;
+    count: number;
+    total: number;
+  }[];
+  // Top sellers by quantity
+  topSellers: {
+    name: string;
+    quantitySold: number;
+    revenue: number;
+  }[];
+  // Shifts that closed during this day (for cash drawer reconciliation)
+  closedShifts: {
+    id: string;
+    staffName: string;
+    startedAt: Date;
+    endedAt: Date;
+    openingCash: number;
+    closingCash: number;
+    expectedCash: number;
+    variance: number;
+  }[];
+};
+
 export function resolveOrderRange(
   preset: "today" | "yesterday" | "last7",
 ): OrderRange {
@@ -283,6 +324,143 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
       amountApplied: Number(d.amountApplied),
       reason: d.reason,
       appliedByStaffName: applierById.get(d.appliedByStaffId) ?? "Unknown",
+    })),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Daily report (Z-report) — everything needed to reconcile a day's business
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function resolveDayRange(date: Date): OrderRange {
+  const from = new Date(date);
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 1);
+  return { from, to };
+}
+
+export async function getDailyReport(date: Date): Promise<DailyReport> {
+  const range = resolveDayRange(date);
+
+  // 1. Top-line totals over completed orders
+  const totals = await prisma.order.aggregate({
+    where: {
+      createdAt: { gte: range.from, lt: range.to },
+      status: "COMPLETED",
+    },
+    _count: { _all: true },
+    _sum: {
+      total: true,
+      tipAmount: true,
+      deliveryFee: true,
+      taxAmount: true,
+      discountAmount: true,
+    },
+  });
+
+  const voidedCount = await prisma.order.count({
+    where: {
+      createdAt: { gte: range.from, lt: range.to },
+      status: "VOIDED",
+    },
+  });
+
+  // 2. Group by order type
+  const byTypeRaw = await prisma.order.groupBy({
+    by: ["orderType"],
+    where: {
+      createdAt: { gte: range.from, lt: range.to },
+      status: "COMPLETED",
+    },
+    _count: { _all: true },
+    _sum: { total: true, tipAmount: true },
+  });
+
+  // 3. Group by payment method
+  const paymentGroups = await prisma.payment.groupBy({
+    by: ["method"],
+    where: {
+      status: "COMPLETED",
+      order: {
+        createdAt: { gte: range.from, lt: range.to },
+        status: "COMPLETED",
+      },
+    },
+    _count: { _all: true },
+    _sum: { amount: true },
+  });
+
+  // 4. Top sellers — group OrderItem rows by menuItem, sum quantity and lineTotal
+  const itemGroups = await prisma.orderItem.groupBy({
+    by: ["nameSnapshot"],
+    where: {
+      order: {
+        createdAt: { gte: range.from, lt: range.to },
+        status: "COMPLETED",
+      },
+    },
+    _sum: { quantity: true, lineTotal: true },
+    orderBy: { _sum: { quantity: "desc" } },
+    take: 10,
+  });
+
+  // 5. Shifts that ended during this day (for cash drawer reconciliation)
+  const closedShifts = await prisma.shift.findMany({
+    where: {
+      endedAt: { gte: range.from, lt: range.to },
+    },
+    orderBy: { endedAt: "asc" },
+    include: { staff: { select: { name: true } } },
+  });
+
+  const revenueRaw = Number(totals._sum.total ?? 0);
+  const tipsTotal = Number(totals._sum.tipAmount ?? 0);
+  const deliveryFeesTotal = Number(totals._sum.deliveryFee ?? 0);
+  const taxTotal = Number(totals._sum.taxAmount ?? 0);
+  const discountTotal = Number(totals._sum.discountAmount ?? 0);
+  const revenue = revenueRaw - tipsTotal;
+
+  return {
+    date: range.from,
+    orderCount: totals._count._all,
+    voidedCount,
+    revenue: Math.round(revenue * 100) / 100,
+    tipsTotal: Math.round(tipsTotal * 100) / 100,
+    deliveryFeesTotal: Math.round(deliveryFeesTotal * 100) / 100,
+    taxTotal: Math.round(taxTotal * 100) / 100,
+    discountTotal: Math.round(discountTotal * 100) / 100,
+    byOrderType: byTypeRaw
+      .map((g) => ({
+        type: g.orderType,
+        count: g._count._all,
+        revenue:
+          Math.round(
+            (Number(g._sum.total ?? 0) - Number(g._sum.tipAmount ?? 0)) * 100,
+          ) / 100,
+      }))
+      .sort((a, b) => b.revenue - a.revenue),
+    byPaymentMethod: paymentGroups
+      .map((g) => ({
+        method: g.method,
+        count: g._count._all,
+        total: Math.round(Number(g._sum.amount ?? 0) * 100) / 100,
+      }))
+      .sort((a, b) => b.total - a.total),
+    topSellers: itemGroups.map((g) => ({
+      name: g.nameSnapshot,
+      quantitySold: Number(g._sum.quantity ?? 0),
+      revenue: Math.round(Number(g._sum.lineTotal ?? 0) * 100) / 100,
+    })),
+    closedShifts: closedShifts.map((s) => ({
+      id: s.id,
+      staffName: s.staff.name,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt!,
+      openingCash: Number(s.openingCash),
+      closingCash: Number(s.closingCash ?? 0),
+      expectedCash: Number(s.expectedCash ?? 0),
+      variance: Number(s.variance ?? 0),
     })),
   };
 }
