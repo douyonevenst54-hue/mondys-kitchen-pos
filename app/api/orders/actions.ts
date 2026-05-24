@@ -60,15 +60,20 @@ const DiscountInputSchema = z
   .nullable();
 
 const CheckoutSchema = z.object({
-  orderType: z.enum(["DINE_IN", "TAKEOUT"]),
+  orderType: z.enum(["DINE_IN", "TAKEOUT", "DELIVERY"]),
   tableId: z.string().nullable(),
   customerName: z.string(),
+  customerPhone: z.string().optional().default(""),
+  deliveryAddress: z.string().optional().default(""),
+  deliveryNotes: z.string().optional().default(""),
+  deliveryFee: z.number().nonnegative().default(0),
   staffId: z.string(),
   lines: z.array(LineInputSchema).min(1),
   discount: DiscountInputSchema,
   subtotal: z.number(),
   discountAmount: z.number(),
   taxAmount: z.number(),
+  tipAmount: z.number().nonnegative().default(0),
   total: z.number(),
   taxRate: z.number(),
   payment: PaymentInputSchema,
@@ -109,6 +114,19 @@ export async function submitCheckout(input: CheckoutInput) {
     return { ok: false as const, error: "Session/staff mismatch" };
   }
 
+  // Delivery requires address + phone
+  if (data.orderType === "DELIVERY") {
+    if (!data.deliveryAddress.trim()) {
+      return { ok: false as const, error: "Delivery address is required" };
+    }
+    if (!data.customerPhone.trim()) {
+      return {
+        ok: false as const,
+        error: "Customer phone is required for delivery",
+      };
+    }
+  }
+
   try {
     const order = await prisma.$transaction(async (tx) => {
       // 1. Find an open shift for this staff (if any) — payments roll into it.
@@ -125,11 +143,25 @@ export async function submitCheckout(input: CheckoutInput) {
           tableId: data.orderType === "DINE_IN" ? data.tableId : null,
           orderType: data.orderType,
           status: "COMPLETED",
-          customerName: data.orderType === "TAKEOUT" ? data.customerName : null,
+          customerName:
+            data.orderType !== "DINE_IN" && data.customerName
+              ? data.customerName
+              : null,
+          customerPhone:
+            data.orderType === "DELIVERY" && data.customerPhone
+              ? data.customerPhone
+              : null,
+          deliveryAddress:
+            data.orderType === "DELIVERY" ? data.deliveryAddress : null,
+          deliveryNotes:
+            data.orderType === "DELIVERY" && data.deliveryNotes
+              ? data.deliveryNotes
+              : null,
+          deliveryFee: data.orderType === "DELIVERY" ? data.deliveryFee : 0,
           subtotal: data.subtotal,
           discountAmount: data.discountAmount,
           taxAmount: data.taxAmount,
-          tipAmount: 0,
+          tipAmount: data.tipAmount,
           total: data.total,
           taxExempt: false,
           completedAt: new Date(),

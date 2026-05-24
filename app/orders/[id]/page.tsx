@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect, notFound } from "next/navigation";
-import { Utensils, ShoppingBag, Ban, Tag, CheckCircle2 } from "lucide-react";
+import { Utensils, ShoppingBag, Truck, Ban, Tag, CheckCircle2 } from "lucide-react";
 import { getOrderDetail } from "@/lib/orders";
 import { OrdersPageHeader } from "@/components/orders/OrdersPageHeader";
 import { OrderDetailActions } from "@/components/orders/OrderDetailActions";
@@ -65,6 +65,13 @@ export default async function OrderDetailPage({
                 >
                   <Utensils className="h-5 w-5" />
                 </span>
+              ) : order.orderType === "DELIVERY" ? (
+                <span
+                  aria-hidden
+                  className="grid h-11 w-11 place-items-center rounded-xl bg-mondy-red/10 text-mondy-red-dark ring-1 ring-mondy-red/20"
+                >
+                  <Truck className="h-5 w-5" />
+                </span>
               ) : (
                 <span
                   aria-hidden
@@ -75,11 +82,17 @@ export default async function OrderDetailPage({
               )}
               <div>
                 <p className="font-sans text-[11px] uppercase tracking-[0.22em] text-mondy-red-dark">
-                  {order.orderType === "DINE_IN" ? "Dine in" : "Takeout"}
+                  {order.orderType === "DINE_IN"
+                    ? "Dine in"
+                    : order.orderType === "DELIVERY"
+                      ? "Delivery"
+                      : "Takeout"}
                 </p>
                 <p className="font-display text-base font-semibold text-mondy-ink">
-                  {order.tableNumber
-                    ? `Table ${order.tableNumber}`
+                  {order.orderType === "DINE_IN"
+                    ? order.tableNumber
+                      ? `Table ${order.tableNumber}`
+                      : "Counter"
                     : order.customerName ?? "Counter"}
                 </p>
                 <p className="font-sans text-xs text-mondy-muted">
@@ -90,6 +103,30 @@ export default async function OrderDetailPage({
 
             <StatusBadge status={order.status} />
           </div>
+
+          {order.orderType === "DELIVERY" && order.deliveryAddress && (
+            <div className="mt-3 space-y-1.5 rounded-lg bg-mondy-red/5 px-3 py-2.5 ring-1 ring-mondy-red/15">
+              <p className="font-sans text-[10px] uppercase tracking-widest text-mondy-red-dark">
+                Deliver to
+              </p>
+              <p className="font-display text-sm font-semibold text-mondy-ink">
+                {order.customerName ?? "Customer"}
+                {order.customerPhone && (
+                  <span className="ml-2 font-sans text-xs font-medium text-mondy-muted tabular">
+                    {order.customerPhone}
+                  </span>
+                )}
+              </p>
+              <p className="font-sans text-sm text-mondy-ink">
+                {order.deliveryAddress}
+              </p>
+              {order.deliveryNotes && (
+                <p className="font-sans text-xs italic text-mondy-muted">
+                  Notes: {order.deliveryNotes}
+                </p>
+              )}
+            </div>
+          )}
 
           {voided && order.voidedReason && (
             <div className="mt-3 rounded-lg bg-mondy-red/5 px-3 py-2 ring-1 ring-mondy-red/20">
@@ -199,6 +236,9 @@ export default async function OrderDetailPage({
               />
             )}
             <Row label="Tax" value={formatMoney(order.taxAmount)} />
+            {order.deliveryFee > 0 && (
+              <Row label="Delivery fee" value={formatMoney(order.deliveryFee)} />
+            )}
             {order.tipAmount > 0 && (
               <Row label="Tip" value={formatMoney(order.tipAmount)} />
             )}

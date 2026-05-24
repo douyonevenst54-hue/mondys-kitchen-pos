@@ -110,6 +110,7 @@ model MenuItemModifierGroup {
 enum OrderType {
   DINE_IN
   TAKEOUT
+  DELIVERY
 }
 
 enum OrderStatus {
@@ -139,6 +140,11 @@ model Order {
   total           Decimal      @db.Decimal(10, 2) @default(0)
   taxExempt       Boolean      @default(false)
   taxExemptReason String?      // "Non-profit", "Resale cert #..." — required if taxExempt
+
+  // Delivery — populated only when orderType = DELIVERY
+  deliveryAddress String?
+  deliveryNotes   String?      // "Apt 3B, ring buzzer, gate code 4521"
+  deliveryFee     Decimal      @db.Decimal(10, 2) @default(0)
 
   notes           String?
   voidedReason    String?
@@ -360,15 +366,16 @@ model Table {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model RestaurantSettings {
-  id              String   @id @default(cuid())
-  name            String   @default("Mondy's Kitchen")
-  address         String?
-  phone           String?
-  email           String?
-  taxRate         Decimal  @db.Decimal(5, 4) @default(0.0625) // MA = 6.25%; tune as needed
-  currency        String   @default("USD")
-  receiptFooter   String?
-  logoUrl         String?
-  timezone        String   @default("America/New_York")
-  updatedAt       DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String   @default("Mondy's Kitchen")
+  address             String?
+  phone               String?
+  email               String?
+  taxRate             Decimal  @db.Decimal(5, 4) @default(0.0625)
+  currency            String   @default("USD")
+  receiptFooter       String?
+  logoUrl             String?
+  timezone            String   @default("America/New_York")
+  defaultDeliveryFee  Decimal  @db.Decimal(10, 2) @default(5.00)
+  updatedAt           DateTime @updatedAt
 }

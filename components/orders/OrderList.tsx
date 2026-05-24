@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Utensils, ShoppingBag, ChevronRight, Ban } from "lucide-react";
+import { Utensils, ShoppingBag, Truck, ChevronRight, Ban } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import { paymentLabel } from "./StatsSummary";
 import type { OrderListRow } from "@/lib/orders";
@@ -147,12 +147,24 @@ export function OrderList({ orders }: { orders: OrderListRow[] }) {
   );
 }
 
-function OrderTypeBadge({ type }: { type: "DINE_IN" | "TAKEOUT" }) {
+function OrderTypeBadge({
+  type,
+}: {
+  type: "DINE_IN" | "TAKEOUT" | "DELIVERY";
+}) {
   if (type === "DINE_IN") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-mondy-yellow-soft/60 px-2 py-0.5 font-sans text-[10px] font-semibold text-mondy-red-dark">
         <Utensils className="h-2.5 w-2.5" />
         Dine in
+      </span>
+    );
+  }
+  if (type === "DELIVERY") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-mondy-red/10 px-2 py-0.5 font-sans text-[10px] font-semibold text-mondy-red-dark ring-1 ring-mondy-red/20">
+        <Truck className="h-2.5 w-2.5" />
+        Delivery
       </span>
     );
   }

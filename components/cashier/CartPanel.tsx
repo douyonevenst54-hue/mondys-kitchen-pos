@@ -8,6 +8,7 @@ import {
   ShoppingBag,
   Users,
   Utensils,
+  Truck,
   Flame,
   Tag,
   X,
@@ -39,6 +40,7 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
     subtotal,
     discountAmount,
     taxAmount,
+    deliveryFee,
     total,
     increment,
     decrement,
@@ -47,6 +49,9 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
     setOrderType,
     setTable,
     setCustomerName,
+    setCustomerPhone,
+    setDeliveryAddress,
+    setDeliveryNotes,
     removeDiscount,
   } = useCart();
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
@@ -57,6 +62,12 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
     state.tableId != null
       ? tables.find((t) => t.id === state.tableId)
       : null;
+
+  // Delivery requires address + phone before checkout is allowed
+  const deliveryReady =
+    state.orderType !== "DELIVERY" ||
+    (state.deliveryAddress.trim().length > 0 &&
+      state.customerPhone.trim().length > 0);
 
   return (
     <aside className="flex h-full w-full flex-col border-l border-mondy-border bg-white lg:w-[380px] xl:w-[420px]">
@@ -72,7 +83,7 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
         </div>
 
         {/* Order type toggle */}
-        <div className="mt-3 grid grid-cols-2 gap-1.5 rounded-xl bg-mondy-cream p-1 ring-1 ring-mondy-border">
+        <div className="mt-3 grid grid-cols-3 gap-1.5 rounded-xl bg-mondy-cream p-1 ring-1 ring-mondy-border">
           <OrderTypeButton
             active={state.orderType === "DINE_IN"}
             onClick={() => setOrderType("DINE_IN")}
@@ -85,11 +96,17 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
             icon={<ShoppingBag className="h-4 w-4" />}
             label="Takeout"
           />
+          <OrderTypeButton
+            active={state.orderType === "DELIVERY"}
+            onClick={() => setOrderType("DELIVERY")}
+            icon={<Truck className="h-4 w-4" />}
+            label="Delivery"
+          />
         </div>
 
-        {/* Table picker (dine-in only) or customer name (takeout) */}
-        <div className="mt-3">
-          {state.orderType === "DINE_IN" ? (
+        {/* Per-type form section */}
+        <div className="mt-3 space-y-2">
+          {state.orderType === "DINE_IN" && (
             <button
               type="button"
               onClick={() => setTablePickerOpen(true)}
@@ -103,7 +120,9 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
               </span>
               <span className="text-xs text-mondy-muted">Change</span>
             </button>
-          ) : (
+          )}
+
+          {state.orderType === "TAKEOUT" && (
             <input
               type="text"
               value={state.customerName}
@@ -111,6 +130,47 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
               placeholder="Customer name (e.g. Marie)"
               className="h-10 w-full rounded-xl border border-mondy-border bg-white px-3 font-sans text-sm text-mondy-ink placeholder:text-mondy-muted focus:bg-white focus:outline-none focus:ring-2 focus:ring-mondy-red/40"
             />
+          )}
+
+          {state.orderType === "DELIVERY" && (
+            <>
+              <input
+                type="text"
+                value={state.customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Customer name"
+                className="h-10 w-full rounded-xl border border-mondy-border bg-white px-3 font-sans text-sm text-mondy-ink placeholder:text-mondy-muted focus:outline-none focus:ring-2 focus:ring-mondy-red/40"
+              />
+              <input
+                type="tel"
+                value={state.customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="Phone (required)"
+                className={`h-10 w-full rounded-xl border bg-white px-3 font-sans text-sm text-mondy-ink placeholder:text-mondy-muted focus:outline-none focus:ring-2 focus:ring-mondy-red/40 ${
+                  state.customerPhone.trim().length === 0
+                    ? "border-mondy-red/40"
+                    : "border-mondy-border"
+                }`}
+              />
+              <textarea
+                value={state.deliveryAddress}
+                onChange={(e) => setDeliveryAddress(e.target.value)}
+                placeholder="Delivery address (required)"
+                rows={2}
+                className={`w-full resize-none rounded-xl border bg-white px-3 py-2 font-sans text-sm text-mondy-ink placeholder:text-mondy-muted focus:outline-none focus:ring-2 focus:ring-mondy-red/40 ${
+                  state.deliveryAddress.trim().length === 0
+                    ? "border-mondy-red/40"
+                    : "border-mondy-border"
+                }`}
+              />
+              <input
+                type="text"
+                value={state.deliveryNotes}
+                onChange={(e) => setDeliveryNotes(e.target.value)}
+                placeholder="Notes (apt #, gate code, etc.)"
+                className="h-10 w-full rounded-xl border border-mondy-border bg-white px-3 font-sans text-sm text-mondy-ink placeholder:text-mondy-muted focus:outline-none focus:ring-2 focus:ring-mondy-red/40"
+              />
+            </>
           )}
         </div>
       </div>
@@ -245,6 +305,9 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
             label={`Tax (${(taxRate * 100).toFixed(2)}%)`}
             value={formatMoney(taxAmount)}
           />
+          {deliveryFee > 0 && (
+            <Row label="Delivery fee" value={formatMoney(deliveryFee)} />
+          )}
           <div className="my-2 h-px bg-mondy-border" />
           <Row label="Total" value={formatMoney(total)} emphasis />
         </dl>
@@ -260,7 +323,11 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
           </button>
           <button
             type="button"
-            disabled={empty || (state.orderType === "DINE_IN" && !state.tableId)}
+            disabled={
+              empty ||
+              (state.orderType === "DINE_IN" && !state.tableId) ||
+              !deliveryReady
+            }
             onClick={onCheckout}
             className="flex-1 rounded-xl bg-mondy-red px-4 py-3 font-display text-base font-semibold text-white shadow-sm transition-all duration-200 ease-mondy hover:bg-mondy-red-dark active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-mondy-muted/40 disabled:shadow-none"
           >
@@ -268,7 +335,9 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
               ? "Add items to begin"
               : state.orderType === "DINE_IN" && !state.tableId
                 ? "Select a table"
-                : `Pay ${formatMoney(total)}`}
+                : !deliveryReady
+                  ? "Enter delivery info"
+                  : `Pay ${formatMoney(total)}`}
           </button>
         </div>
       </div>

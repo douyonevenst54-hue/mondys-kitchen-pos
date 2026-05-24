@@ -17,6 +17,7 @@ type Settings = {
   currency: string;
   receiptFooter: string;
   timezone: string;
+  defaultDeliveryFee: number;
 };
 
 type Props = {
@@ -92,13 +93,37 @@ export function ReceiptView({ order, settings, logoUrl }: Props) {
           <Line label="Date" value={formatDateTime(order.createdAt)} />
           <Line
             label="Type"
-            value={order.orderType === "DINE_IN" ? "Dine in" : "Takeout"}
+            value={
+              order.orderType === "DINE_IN"
+                ? "Dine in"
+                : order.orderType === "DELIVERY"
+                  ? "Delivery"
+                  : "Takeout"
+            }
           />
           {order.tableNumber != null && (
             <Line label="Table" value={String(order.tableNumber)} />
           )}
           {order.customerName && (
             <Line label="Customer" value={order.customerName} />
+          )}
+          {order.orderType === "DELIVERY" && order.customerPhone && (
+            <Line label="Phone" value={order.customerPhone} />
+          )}
+          {order.orderType === "DELIVERY" && order.deliveryAddress && (
+            <div className="mt-1 border-t border-dashed border-black/30 pt-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider">
+                Deliver to
+              </p>
+              <p className="mt-0.5 text-[11px] leading-snug">
+                {order.deliveryAddress}
+              </p>
+              {order.deliveryNotes && (
+                <p className="mt-0.5 text-[10px] italic">
+                  Notes: {order.deliveryNotes}
+                </p>
+              )}
+            </div>
           )}
           <Line label="Server" value={order.staffName} />
           {order.status === "VOIDED" && (
@@ -159,6 +184,12 @@ export function ReceiptView({ order, settings, logoUrl }: Props) {
             label={`Tax (${(settings.taxRate * 100).toFixed(2)}%)`}
             value={formatMoney(order.taxAmount)}
           />
+          {order.deliveryFee > 0 && (
+            <Line
+              label="Delivery fee"
+              value={formatMoney(order.deliveryFee)}
+            />
+          )}
           {order.tipAmount > 0 && (
             <Line label="Tip" value={formatMoney(order.tipAmount)} />
           )}

@@ -1,4 +1,4 @@
-import { Receipt, DollarSign, TrendingUp, Ban } from "lucide-react";
+import { Receipt, DollarSign, TrendingUp, Ban, HandCoins } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import type { OrderStats } from "@/lib/orders";
 
@@ -23,7 +23,7 @@ function paymentLabel(method: string): string {
 export function StatsSummary({ stats }: { stats: OrderStats }) {
   return (
     <section className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard
           icon={<Receipt className="h-4 w-4" />}
           label="Orders"
@@ -38,28 +38,30 @@ export function StatsSummary({ stats }: { stats: OrderStats }) {
           icon={<DollarSign className="h-4 w-4" />}
           label="Revenue"
           value={formatMoney(stats.revenue)}
+          sublabel={
+            stats.deliveryFeesTotal > 0
+              ? `incl. ${formatMoney(stats.deliveryFeesTotal)} delivery`
+              : undefined
+          }
           emphasis
+        />
+        <StatCard
+          icon={<HandCoins className="h-4 w-4" />}
+          label="Tips"
+          value={formatMoney(stats.tipsTotal)}
+          sublabel="to staff"
         />
         <StatCard
           icon={<TrendingUp className="h-4 w-4" />}
           label="Avg ticket"
           value={formatMoney(stats.averageTicket)}
         />
-        {stats.voidedCount > 0 ? (
-          <StatCard
-            icon={<Ban className="h-4 w-4" />}
-            label="Voided"
-            value={stats.voidedCount.toString()}
-            tone="muted"
-          />
-        ) : (
-          <StatCard
-            icon={<Ban className="h-4 w-4" />}
-            label="Voided"
-            value="0"
-            tone="muted"
-          />
-        )}
+        <StatCard
+          icon={<Ban className="h-4 w-4" />}
+          label="Voided"
+          value={stats.voidedCount.toString()}
+          tone="muted"
+        />
       </div>
 
       {stats.byPaymentMethod.length > 0 && (

@@ -7,6 +7,7 @@ import {
   Smartphone,
   X,
   CheckCircle2,
+  HandCoins,
 } from "lucide-react";
 import { useCart } from "./CartContext";
 import { formatMoney } from "@/lib/money";
@@ -27,9 +28,13 @@ type Method =
   | "CASH_APP"
   | "OTHER";
 
-type Step = "method" | "cash-tendered" | "card-confirm" | "success";
+type Step = "tip" | "method" | "cash-tendered" | "card-confirm" | "success";
 
 const QUICK_TENDER_AMOUNTS = [5, 10, 20, 50, 100];
+
+// Standard restaurant tip suggestions, computed on subtotal (pre-discount,
+// pre-tax) — matches Square / Toast defaults and is most generous to staff.
+const TIP_PERCENTAGES = [15, 18, 20] as const;
 
 export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) {
   const {
@@ -37,13 +42,27 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
     subtotal,
     discountAmount,
     taxAmount,
+    tipAmount,
+    deliveryFee,
     total,
     clear,
+    setTip,
+    clearTip,
   } = useCart();
 
-  const [step, setStep] = useState<Step>("method");
+  // If subtotal-after-discount is 0 (e.g. full comp), the tip prompt is
+  // meaningless — skip straight to method selection.
+  // Also skip the tip step entirely for DINE_IN orders — customers tip on the
+  // card slip at the table, not at the POS.
+  const baseAfterDiscount = Math.max(0, subtotal - discountAmount);
+  const skipTip =
+    baseAfterDiscount === 0 || state.orderType === "DINE_IN";
+  const initialStep: Step = skipTip ? "method" : "tip";
+
+  const [step, setStep] = useState<Step>(initialStep);
   const [method, setMethod] = useState<Method | null>(null);
   const [tendered, setTendered] = useState<string>("");
+  const [customTipInput, setCustomTipInput] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -72,6 +91,10 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
         orderType: state.orderType,
         tableId: state.tableId,
         customerName: state.customerName,
+        customerPhone: state.customerPhone,
+        deliveryAddress: state.deliveryAddress,
+        deliveryNotes: state.deliveryNotes,
+        deliveryFee,
         staffId,
         lines: state.lines.map((l) => ({
           menuItemId: l.menuItemId,
@@ -95,6 +118,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
         subtotal,
         discountAmount,
         taxAmount,
+        tipAmount,
         total,
         taxRate,
         payment: {
@@ -159,7 +183,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
               <h3 className="mt-1 font-display text-3xl font-bold text-mondy-ink tabular">
                 {formatMoney(total)}
               </h3>
-              <div className="mt-1 flex items-center gap-3 font-sans text-xs text-mondy-muted">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 font-sans text-xs text-mondy-muted">
                 <span>Subtotal {formatMoney(subtotal)}</span>
                 {discountAmount > 0 && (
                   <span className="text-mondy-red">
@@ -167,6 +191,14 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
                   </span>
                 )}
                 <span>Tax {formatMoney(taxAmount)}</span>
+                {deliveryFee > 0 && (
+                  <span>Delivery {formatMoney(deliveryFee)}</span>
+                )}
+                {tipAmount > 0 && (
+                  <span className="text-mondy-red">
+                    Tip {formatMoney(tipAmount)}
+                  </span>
+                )}
               </div>
             </div>
             <button
@@ -178,6 +210,164 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
               <X className="h-5 w-5" />
             </button>
           </header>
+        )}
+
+        {/* Tip selection */}
+        {step === "tip" && (
+          <div className="p-6">
+            <div className="mb-4 flex items-start gap-3">
+              <span
+                aria-hidden
+                className="grid h-10 w-10 place-items-center rounded-xl bg-mondy-red/10 text-mondy-red-dark"
+              >
+                <HandCoins className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="font-sans text-[11px] uppercase tracking-[0.24em] text-mondy-red-dark">
+                  Add a tip?
+                </p>
+                <p className="mt-0.5 font-display text-lg font-semibold text-mondy-ink">
+                  100% goes to the staff
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {TIP_PERCENTAGES.map((pct) => {
+                const amt =
+                  Math.round(baseAfterDiscount * (pct / 100) * 100) / 100;
+                const selected = Math.abs(tipAmount - amt) < 0.005;
+                return (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setCustomTipInput("");
+                      setTip(amt);
+                    }}
+                    className={`flex flex-col items-center justify-center rounded-2xl py-4 ring-1 transition-all duration-200 ease-mondy ${
+                      selected
+                        ? "bg-mondy-red text-white ring-mondy-red shadow"
+                        : "bg-mondy-cream text-mondy-ink ring-mondy-border hover:bg-white hover:ring-mondy-red/40"
+                    }`}
+                  >
+                    <span className="font-display text-2xl font-bold tabular">
+                      {pct}%
+                    </span>
+                    <span
+                      className={`mt-0.5 font-sans text-xs tabular ${
+                        selected ? "text-white/85" : "text-mondy-muted"
+                      }`}
+                    >
+                      {formatMoney(amt)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <label
+                className={`flex items-center gap-2 rounded-xl px-3 py-2.5 ring-1 transition ${
+                  customTipInput && tipAmount > 0
+                    ? "bg-white ring-mondy-red/40"
+                    : "bg-mondy-cream ring-mondy-border"
+                }`}
+              >
+                <span className="font-display text-base text-mondy-muted">
+                  $
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={customTipInput}
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/[^0-9.]/g, "");
+                    setCustomTipInput(cleaned);
+                    setError(null);
+                    const n = parseFloat(cleaned);
+                    if (!isNaN(n) && n >= 0) {
+                      setTip(n);
+                    } else if (cleaned === "") {
+                      clearTip();
+                    }
+                  }}
+                  placeholder="Custom"
+                  className="w-full bg-transparent font-display text-base text-mondy-ink placeholder:text-mondy-muted focus:outline-none"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setCustomTipInput("");
+                  clearTip();
+                }}
+                className={`rounded-xl py-2.5 font-sans text-sm font-medium transition ring-1 ${
+                  tipAmount === 0
+                    ? "bg-mondy-ink text-white ring-mondy-ink"
+                    : "bg-white text-mondy-ink ring-mondy-border hover:bg-mondy-cream"
+                }`}
+              >
+                No tip
+              </button>
+            </div>
+
+            <div className="mt-5 rounded-xl bg-mondy-cream p-4">
+              <div className="flex items-center justify-between font-sans text-sm">
+                <span className="text-mondy-muted">Subtotal + tax</span>
+                <span className="tabular text-mondy-ink">
+                  {formatMoney(
+                    Math.round((baseAfterDiscount + taxAmount) * 100) / 100,
+                  )}
+                </span>
+              </div>
+              {deliveryFee > 0 && (
+                <div className="mt-1 flex items-center justify-between font-sans text-sm">
+                  <span className="text-mondy-muted">Delivery fee</span>
+                  <span className="tabular text-mondy-ink">
+                    + {formatMoney(deliveryFee)}
+                  </span>
+                </div>
+              )}
+              <div className="mt-1 flex items-center justify-between font-sans text-sm">
+                <span className="text-mondy-muted">Tip</span>
+                <span className="tabular text-mondy-ink">
+                  {tipAmount > 0 ? `+ ${formatMoney(tipAmount)}` : "—"}
+                </span>
+              </div>
+              <div className="my-2 h-px bg-mondy-border" />
+              <div className="flex items-center justify-between">
+                <span className="font-display text-base font-semibold text-mondy-ink">
+                  Total
+                </span>
+                <span className="font-display text-2xl font-bold text-mondy-red tabular">
+                  {formatMoney(total)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl border border-mondy-border bg-white px-4 py-3 font-sans text-sm font-medium text-mondy-ink hover:bg-mondy-cream"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setStep("method");
+                }}
+                className="flex-1 rounded-xl bg-mondy-red px-4 py-3 font-display text-base font-semibold text-white shadow-sm hover:bg-mondy-red-dark active:scale-[0.98]"
+              >
+                Continue to payment
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Method selection */}
@@ -357,6 +547,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
             </h3>
             <p className="mt-2 font-sans text-sm text-mondy-muted">
               {formatMoney(total)} via {method?.replace(/_/g, " ").toLowerCase()}
+              {tipAmount > 0 && ` · ${formatMoney(tipAmount)} tip`}
               {method === "CASH" &&
                 changeAmount > 0 &&
                 ` · ${formatMoney(changeAmount)} change`}

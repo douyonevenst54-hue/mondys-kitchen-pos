@@ -58,6 +58,13 @@ export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
 
 export async function getSettings() {
   const settings = await prisma.restaurantSettings.findFirst();
+  // Defensive fallback: even if the column exists, the value may be null on
+  // pre-existing rows that were created before the column was added.
+  const rawDeliveryFee = settings?.defaultDeliveryFee;
+  const defaultDeliveryFee =
+    rawDeliveryFee != null && !isNaN(Number(rawDeliveryFee))
+      ? Number(rawDeliveryFee)
+      : 5.0;
   return {
     name: settings?.name ?? "Mondy's Kitchen",
     address: settings?.address ?? null,
@@ -68,6 +75,7 @@ export async function getSettings() {
     receiptFooter:
       settings?.receiptFooter ?? "Thank you for dining with Mondy's Kitchen!",
     timezone: settings?.timezone ?? "America/New_York",
+    defaultDeliveryFee,
   };
 }
 

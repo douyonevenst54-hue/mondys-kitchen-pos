@@ -39,6 +39,7 @@ export default async function HomePage() {
       categories={categories}
       tables={tables}
       taxRate={settings.taxRate}
+      defaultDeliveryFee={settings.defaultDeliveryFee}
       staffId={session.staffId}
       staffName={session.name}
       staffRole={session.role}

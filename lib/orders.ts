@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 export type OrderListRow = {
   id: string;
   orderNumber: number;
-  orderType: "DINE_IN" | "TAKEOUT";
+  orderType: "DINE_IN" | "TAKEOUT" | "DELIVERY";
   status: "OPEN" | "SENT" | "READY" | "COMPLETED" | "VOIDED";
   createdAt: Date;
   completedAt: Date | null;
@@ -12,6 +12,8 @@ export type OrderListRow = {
   subtotal: number;
   discountAmount: number;
   taxAmount: number;
+  tipAmount: number;
+  deliveryFee: number;
   itemCount: number;
   customerName: string | null;
   tableNumber: number | null;
@@ -21,7 +23,9 @@ export type OrderListRow = {
 
 export type OrderStats = {
   orderCount: number;
-  revenue: number;
+  revenue: number;        // total - tips (tips pass through to staff)
+  tipsTotal: number;      // sum of tipAmount on completed orders
+  deliveryFeesTotal: number; // sum of deliveryFee on completed orders (included in revenue above)
   averageTicket: number;
   voidedCount: number;
   byPaymentMethod: { method: string; count: number; total: number }[];
@@ -85,6 +89,8 @@ export async function listOrders(range: OrderRange): Promise<OrderListRow[]> {
     subtotal: Number(o.subtotal),
     discountAmount: Number(o.discountAmount),
     taxAmount: Number(o.taxAmount),
+    tipAmount: Number(o.tipAmount),
+    deliveryFee: Number(o.deliveryFee),
     itemCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
     customerName: o.customerName,
     tableNumber: o.table?.number ?? null,
@@ -100,7 +106,7 @@ export async function getOrderStats(range: OrderRange): Promise<OrderStats> {
       status: "COMPLETED",
     },
     _count: { _all: true },
-    _sum: { total: true },
+    _sum: { total: true, tipAmount: true, deliveryFee: true },
   });
 
   const voidedCount = await prisma.order.count({
@@ -124,12 +130,19 @@ export async function getOrderStats(range: OrderRange): Promise<OrderStats> {
   });
 
   const orderCount = completed._count._all;
-  const revenue = Number(completed._sum.total ?? 0);
+  const totalSum = Number(completed._sum.total ?? 0);
+  const tipsTotal = Number(completed._sum.tipAmount ?? 0);
+  const deliveryFeesTotal = Number(completed._sum.deliveryFee ?? 0);
+  // Revenue = what the business takes in (delivery fee included)
+  // MINUS tips (which pass through to staff at end of shift)
+  const revenue = totalSum - tipsTotal;
   const averageTicket = orderCount > 0 ? revenue / orderCount : 0;
 
   return {
     orderCount,
     revenue: Math.round(revenue * 100) / 100,
+    tipsTotal: Math.round(tipsTotal * 100) / 100,
+    deliveryFeesTotal: Math.round(deliveryFeesTotal * 100) / 100,
     averageTicket: Math.round(averageTicket * 100) / 100,
     voidedCount,
     byPaymentMethod: paymentGroups
@@ -145,7 +158,7 @@ export async function getOrderStats(range: OrderRange): Promise<OrderStats> {
 export type OrderDetail = {
   id: string;
   orderNumber: number;
-  orderType: "DINE_IN" | "TAKEOUT";
+  orderType: "DINE_IN" | "TAKEOUT" | "DELIVERY";
   status: "OPEN" | "SENT" | "READY" | "COMPLETED" | "VOIDED";
   createdAt: Date;
   completedAt: Date | null;
@@ -153,6 +166,8 @@ export type OrderDetail = {
   voidedReason: string | null;
   customerName: string | null;
   customerPhone: string | null;
+  deliveryAddress: string | null;
+  deliveryNotes: string | null;
   tableNumber: number | null;
   staffName: string;
   notes: string | null;
@@ -160,6 +175,7 @@ export type OrderDetail = {
   discountAmount: number;
   taxAmount: number;
   tipAmount: number;
+  deliveryFee: number;
   total: number;
   taxExempt: boolean;
   taxExemptReason: string | null;
@@ -229,6 +245,8 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
     voidedReason: o.voidedReason,
     customerName: o.customerName,
     customerPhone: o.customerPhone,
+    deliveryAddress: o.deliveryAddress,
+    deliveryNotes: o.deliveryNotes,
     tableNumber: o.table?.number ?? null,
     staffName: o.staff.name,
     notes: o.notes,
@@ -236,6 +254,7 @@ export async function getOrderDetail(orderId: string): Promise<OrderDetail | nul
     discountAmount: Number(o.discountAmount),
     taxAmount: Number(o.taxAmount),
     tipAmount: Number(o.tipAmount),
+    deliveryFee: Number(o.deliveryFee),
     total: Number(o.total),
     taxExempt: o.taxExempt,
     taxExemptReason: o.taxExemptReason,

@@ -21,6 +21,7 @@ type Props = {
   categories: CategoryWithItems[];
   tables: Table[];
   taxRate: number;
+  defaultDeliveryFee: number;
   staffId: string;
   staffName: string;
   staffRole: string;
@@ -34,6 +35,7 @@ export function CashierShell({
   categories,
   tables,
   taxRate,
+  defaultDeliveryFee,
   staffId,
   staffName,
   staffRole,
@@ -56,7 +58,7 @@ export function CashierShell({
   }
 
   return (
-    <CartProvider taxRate={taxRate}>
+    <CartProvider taxRate={taxRate} defaultDeliveryFee={defaultDeliveryFee}>
       <div className="flex h-screen w-full flex-col overflow-hidden">
         <TopBar
           staffName={staffName}
