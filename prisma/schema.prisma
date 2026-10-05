@@ -44,6 +44,7 @@ model MenuItem {
   imageUrl        String?
   prepTimeMinutes Int      @default(10)
   isAvailable     Boolean  @default(true) // toggle off when sold out
+  portionsLeft    Int?     // null = not counted; otherwise portions ready to sell
   availableUntil  DateTime? // optional: hide item after this date (e.g. seasonal special)
   isActive        Boolean  @default(true) // soft delete
   sortOrder       Int      @default(0)
@@ -54,6 +55,7 @@ model MenuItem {
   category        Category                @relation(fields: [categoryId], references: [id])
   modifierGroups  MenuItemModifierGroup[]
   orderItems      OrderItem[]
+  portionEvents   PortionEvent[]
 
   @@index([categoryId])
   @@index([isAvailable, isActive])
@@ -173,6 +175,7 @@ model Order {
   items           OrderItem[]
   payments        Payment[]
   discounts       OrderDiscount[]
+  portionEvents   PortionEvent[]
 
   @@index([status])
   @@index([createdAt])
@@ -328,6 +331,7 @@ model Staff {
 
   orders      Order[]
   shifts      Shift[]
+  portionEvents PortionEvent[]
 }
 
 model Shift {
@@ -394,4 +398,39 @@ model RestaurantSettings {
   businessHours           Json?    // { "monday": "11:00-21:00", "tuesday": null, ... }
   onlinePrepTimeMinutes   Int      @default(20)
   updatedAt           DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PORTION COUNTS — daily audit trail
+// Every change to MenuItem.portionsLeft writes one row here, so a day can be
+// replayed: carried in + all changes = left at end of day.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PortionEventType {
+  COUNT   // physical count entered; change = counted - what the system expected
+  ADD     // extra batch made
+  REMOVE  // waste, staff meal, correction (reason required)
+  SALE    // sold at checkout
+  VOID    // portions returned when an order is voided
+}
+
+model PortionEvent {
+  id           String           @id @default(cuid())
+  menuItemId   String
+  businessDate String           // "YYYY-MM-DD" in the restaurant's timezone
+  type         PortionEventType
+  change       Int              // + or - portions
+  balanceAfter Int
+  reason       String?
+  staffId      String
+  orderId      String?
+  createdAt    DateTime         @default(now())
+
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
+  staff        Staff    @relation(fields: [staffId], references: [id])
+  order        Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([businessDate])
+  @@index([menuItemId, createdAt])
+  @@index([orderId])
 }

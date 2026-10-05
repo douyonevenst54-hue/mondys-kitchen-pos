@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { refreshSessionShiftState } from "@/app/login/actions";
+import { returnPortionsForOrder, sellPortions } from "@/lib/portions";
 
 export async function logoutAndRedirect() {
   const c = await cookies();
@@ -196,6 +197,10 @@ export async function submitCheckout(input: CheckoutInput) {
         include: { items: true },
       });
 
+      // 2b. Subtract counted portions. Throws (and rolls back the whole order)
+      // if there aren't enough left.
+      await sellPortions(tx, data.lines, data.staffId, created.id);
+
       // 3. Record the discount application (if any). Custom discounts have
       // synthetic ids like "custom-PERCENT-..." that aren't in the Discount
       // table; we skip persisting OrderDiscount for those but keep the
@@ -294,25 +299,28 @@ export async function voidOrder(
     return { ok: false as const, error: "Order is already voided" };
   }
 
-  await prisma.$transaction([
-    prisma.order.update({
+  const managerId = manager.id;
+  await prisma.$transaction(async (tx) => {
+    await tx.order.update({
       where: { id: order.id },
       data: {
         status: "VOIDED",
         voidedAt: new Date(),
         voidedReason: parsed.data.reason,
-        voidedByStaffId: manager.id,
+        voidedByStaffId: managerId,
       },
-    }),
-    prisma.payment.updateMany({
+    });
+    await tx.payment.updateMany({
       where: { orderId: order.id, status: "COMPLETED" },
       data: {
         status: "REFUNDED",
         refundedAt: new Date(),
         refundReason: parsed.data.reason,
       },
-    }),
-  ]);
+    });
+    // Put counted portions back on the shelf.
+    await returnPortionsForOrder(tx, order.id, managerId);
+  });
 
   return {
     ok: true as const,

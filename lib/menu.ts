@@ -6,6 +6,7 @@ export type MenuItemWithModifiers = {
   name: string;
   price: number;
   isAvailable: boolean;
+  portionsLeft: number | null;
   categoryId: string;
   hasSpiceModifier: boolean;
 };
@@ -48,6 +49,7 @@ export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
       name: item.name,
       price: Number(item.price),
       isAvailable: item.isAvailable,
+      portionsLeft: item.portionsLeft,
       categoryId: item.categoryId,
       hasSpiceModifier: item.modifierGroups.some(
         (mg) => mg.modifierGroup.name === "Spice Level",

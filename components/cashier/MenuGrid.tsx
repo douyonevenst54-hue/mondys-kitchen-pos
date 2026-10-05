@@ -166,6 +166,17 @@ function MenuTile({
         >
           {formatMoney(item.price)}
         </span>
+        {!soldOut && item.portionsLeft != null && (
+          <span
+            className={`rounded-full px-2 py-0.5 font-sans text-[11px] font-semibold tabular ${
+              item.portionsLeft <= 3
+                ? "bg-mondy-red text-white"
+                : "bg-mondy-cream text-mondy-muted ring-1 ring-mondy-border"
+            }`}
+          >
+            {item.portionsLeft} left
+          </span>
+        )}
         {item.hasSpiceModifier && !soldOut && (
           <span
             title="Spice level customizable"
