@@ -1,30 +1,26 @@
+import { randomInt } from "node:crypto";
+
 /**
  * Generate a short, human-readable confirmation code for online orders.
  *
- * Format: "MK-XXXX" where XXXX is 4 random digits (1000-9999).
+ * Format: "MK-XXXXXX" — 6 random digits.
  *
- * Why this format:
- * - Prefixed "MK-" so it's recognizable as Mondy's Kitchen
- * - 4 digits is the sweet spot: short enough to read out loud over the phone,
- *   long enough to be reasonably unique (9000 possibilities)
- * - Numbers only — no ambiguous chars (O vs 0, I vs 1, S vs 5)
- * - Customer says "MK-4-8-2-9", cashier types it in, no confusion
+ * - "MK-" prefix so it's recognizable as Mondy's Kitchen
+ * - Digits only, no ambiguous characters; easy to read out at the counter
+ * - 6 digits (900,000 codes) because the column is @unique for all time.
+ *   With only 4 digits (9,000 codes) collisions would start failing orders
+ *   after a few thousand online orders.
+ * - crypto.randomInt, so codes can't be predicted from earlier ones
  *
- * Uniqueness: caller is responsible for retrying on collision. Since the
- * confirmationCode column is @unique in the DB, an insert with a duplicate
- * code will fail loudly — caller should generate a new code and retry.
+ * The code is for reading out at pickup. The customer's status link uses the
+ * order's id, which is long and unguessable.
  */
 export function generateConfirmationCode(): string {
-  const digits = Math.floor(1000 + Math.random() * 9000);
-  return `MK-${digits}`;
+  return `MK-${randomInt(100000, 1000000)}`;
 }
 
 /**
  * Try to insert with a confirmation code, retrying with new codes on collision.
- *
- * Most collisions clear in 1-2 retries (9000-code namespace is large for the
- * volume of orders we expect). Bail out after 10 tries — by then something is
- * very wrong (data corruption, clock skew, etc).
  */
 export async function withUniqueConfirmationCode<T>(
   insertFn: (code: string) => Promise<T>,

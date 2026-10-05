@@ -33,7 +33,7 @@ export async function setOnlineOrderingPaused(paused: boolean) {
     data: { onlineOrderingPaused: paused },
   });
   revalidatePath("/admin/online-settings");
-  revalidatePath("/menu");
+  revalidatePath("/order");
   return { ok: true as const };
 }
 
@@ -104,7 +104,7 @@ export async function setBusinessHours(
     data: { businessHours: parsed.data },
   });
   revalidatePath("/admin/online-settings");
-  revalidatePath("/menu");
+  revalidatePath("/order");
   return { ok: true as const };
 }
 
@@ -134,6 +134,6 @@ export async function setOnlinePrepTime(minutes: number) {
     data: { onlinePrepTimeMinutes: parsed.data },
   });
   revalidatePath("/admin/online-settings");
-  revalidatePath("/menu");
+  revalidatePath("/order");
   return { ok: true as const };
 }

@@ -34,3 +34,27 @@ export async function getManagerFromSession(): Promise<ManagerStaff | null> {
 
   return { id: staff.id, name: staff.name, role: staff.role };
 }
+
+export type SessionStaff = { id: string; name: string; role: string };
+
+/** Any active, logged-in staff member, verified against the database. */
+export async function getStaffFromSession(): Promise<SessionStaff | null> {
+  const c = await cookies();
+  const raw = c.get("mondy_session")?.value;
+  if (!raw) return null;
+
+  let staffId: unknown;
+  try {
+    staffId = (JSON.parse(raw) as { staffId?: unknown }).staffId;
+  } catch {
+    return null;
+  }
+  if (typeof staffId !== "string" || staffId.length === 0) return null;
+
+  const staff = await prisma.staff.findUnique({
+    where: { id: staffId },
+    select: { id: true, name: true, role: true, isActive: true },
+  });
+  if (!staff || !staff.isActive) return null;
+  return { id: staff.id, name: staff.name, role: staff.role };
+}

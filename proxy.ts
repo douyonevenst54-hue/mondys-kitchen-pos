@@ -2,6 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const PUBLIC_PATHS = ["/login"];
 
+// Customer-facing pages: open to everyone, logged in or not.
+// /api/stripe is the Stripe webhook (it checks Stripe's signature itself).
+const CUSTOMER_PATHS = ["/order", "/api/stripe"];
+
 // Paths a logged-in user can access regardless of shift status.
 // /shift/open is where we send cashiers without a shift; obviously they need
 // to be able to reach it. /shift/close is for closing. Sign-out via API.
@@ -16,6 +20,10 @@ export function proxy(req: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname.includes(".") // static assets
   ) {
+    return NextResponse.next();
+  }
+
+  if (CUSTOMER_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
 

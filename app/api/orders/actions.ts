@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { refreshSessionShiftState } from "@/app/login/actions";
 import { returnPortionsForOrder, sellPortions } from "@/lib/portions";
+import { getStripe } from "@/lib/stripe";
 
 export async function logoutAndRedirect() {
   const c = await cookies();
@@ -290,13 +291,37 @@ export async function voidOrder(
 
   const order = await prisma.order.findUnique({
     where: { id: parsed.data.orderId },
-    select: { id: true, status: true },
+    select: {
+      id: true,
+      status: true,
+      stripePaymentIntentId: true,
+      payments: { select: { method: true, status: true } },
+    },
   });
   if (!order) {
     return { ok: false as const, error: "Order not found" };
   }
   if (order.status === "VOIDED") {
     return { ok: false as const, error: "Order is already voided" };
+  }
+
+  // Online card orders: give the money back through Stripe before voiding.
+  const paidOnline = order.payments.some(
+    (p) => p.method === "STRIPE_ONLINE" && p.status === "COMPLETED",
+  );
+  if (paidOnline && order.stripePaymentIntentId) {
+    try {
+      await getStripe().refunds.create(
+        { payment_intent: order.stripePaymentIntentId },
+        { idempotencyKey: `void-refund-${order.id}` },
+      );
+    } catch (e) {
+      console.error("Stripe refund failed:", e);
+      return {
+        ok: false as const,
+        error: "Stripe refund failed, so the order was not voided. Try again or refund from the Stripe dashboard.",
+      };
+    }
   }
 
   const managerId = manager.id;
