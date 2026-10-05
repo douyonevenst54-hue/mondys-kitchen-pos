@@ -65,6 +65,12 @@ export async function getSettings() {
     rawDeliveryFee != null && !isNaN(Number(rawDeliveryFee))
       ? Number(rawDeliveryFee)
       : 5.0;
+
+  // Business hours — JSON column, may be null on existing rows.
+  // Shape: { monday: "11:00-21:00", tuesday: null, ... } where null = closed that day.
+  const businessHours =
+    (settings?.businessHours as Record<string, string | null> | null) ?? null;
+
   return {
     name: settings?.name ?? "Mondy's Kitchen",
     address: settings?.address ?? null,
@@ -76,6 +82,10 @@ export async function getSettings() {
       settings?.receiptFooter ?? "Thank you for dining with Mondy's Kitchen!",
     timezone: settings?.timezone ?? "America/New_York",
     defaultDeliveryFee,
+    // Online ordering
+    onlineOrderingPaused: settings?.onlineOrderingPaused ?? false,
+    businessHours,
+    onlinePrepTimeMinutes: settings?.onlinePrepTimeMinutes ?? 20,
   };
 }
 

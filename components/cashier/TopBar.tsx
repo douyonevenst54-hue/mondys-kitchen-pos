@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Search, LogOut, User, Clock, Receipt } from "lucide-react";
+import { Search, LogOut, User, Clock, Receipt, Ban } from "lucide-react";
 import { useState } from "react";
 import { ShiftStatus } from "./ShiftStatus";
 
@@ -147,6 +147,15 @@ export function TopBar({
                 <Receipt className="h-4 w-4 text-mondy-muted" aria-hidden />
                 Orders
               </a>
+              {(staffRole === "OWNER" || staffRole === "MANAGER") && (
+                <a
+                  href="/menu/availability"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <Ban className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Sold-out list
+                </a>
+              )}
               <form action={signOutAction}>
                 <button
                   type="submit"

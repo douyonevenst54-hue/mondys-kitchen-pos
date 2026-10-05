@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { FileBarChart } from "lucide-react";
+import { FileBarChart, Settings2 } from "lucide-react";
 import {
   listOrders,
   getOrderStats,
@@ -65,13 +65,22 @@ export default async function OrdersPage({
           <RangeSelector current={range} />
           <div className="flex items-center gap-3">
             {session.role !== "CASHIER" && (
-              <Link
-                href="/reports/daily"
-                className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-sans text-xs font-medium text-mondy-ink ring-1 ring-mondy-border transition hover:bg-mondy-yellow-soft/40"
-              >
-                <FileBarChart className="h-3.5 w-3.5" />
-                Daily report
-              </Link>
+              <>
+                <Link
+                  href="/admin/online-settings"
+                  className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-sans text-xs font-medium text-mondy-ink ring-1 ring-mondy-border transition hover:bg-mondy-yellow-soft/40"
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                  Online settings
+                </Link>
+                <Link
+                  href="/reports/daily"
+                  className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-sans text-xs font-medium text-mondy-ink ring-1 ring-mondy-border transition hover:bg-mondy-yellow-soft/40"
+                >
+                  <FileBarChart className="h-3.5 w-3.5" />
+                  Daily report
+                </Link>
+              </>
             )}
             <p className="font-sans text-xs text-mondy-muted">
               {orders.length} {orders.length === 1 ? "order" : "orders"} ·{" "}

@@ -113,6 +113,11 @@ enum OrderType {
   DELIVERY
 }
 
+enum OrderSource {
+  POS              // rung up at the counter
+  ONLINE_PICKUP    // placed online, customer picks up
+}
+
 enum OrderStatus {
   OPEN        // being built at the POS
   SENT        // sent to kitchen
@@ -154,6 +159,13 @@ model Order {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   completedAt     DateTime?
+
+  // Online ordering — null for in-store POS orders
+  source                 OrderSource @default(POS)
+  customerEmail          String?
+  stripePaymentIntentId  String?     @unique
+  onlineConfirmationCode String?     @unique  // "MK-4829", customer-facing
+  estimatedReadyAt       DateTime?            // when we told the customer the food would be ready
 
   staff           Staff             @relation(fields: [staffId], references: [id])
   shift           Shift?            @relation(fields: [shiftId], references: [id])
@@ -253,6 +265,7 @@ model OrderDiscount {
 enum PaymentMethod {
   CASH
   CARD_PRESENT      // chip/tap/swipe via Epos Now terminal
+  STRIPE_ONLINE     // online card payment via Stripe
   CARD_MANUAL       // keyed in (phone orders, card not present)
   MOBILE_WALLET     // Apple Pay / Google Pay / Samsung Pay (via Epos Now)
   GIFT_CARD         // store gift card
@@ -377,5 +390,8 @@ model RestaurantSettings {
   logoUrl             String?
   timezone            String   @default("America/New_York")
   defaultDeliveryFee  Decimal  @db.Decimal(10, 2) @default(5.00)
+  onlineOrderingPaused    Boolean  @default(false)
+  businessHours           Json?    // { "monday": "11:00-21:00", "tuesday": null, ... }
+  onlinePrepTimeMinutes   Int      @default(20)
   updatedAt           DateTime @updatedAt
 }

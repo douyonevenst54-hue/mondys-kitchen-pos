@@ -129,6 +129,23 @@ export async function submitCheckout(input: CheckoutInput) {
 
   try {
     const order = await prisma.$transaction(async (tx) => {
+      // 0. Refuse items that were marked sold out after this register loaded
+      // its menu (another device may have changed it).
+      const itemIds = [...new Set(data.lines.map((l) => l.menuItemId))];
+      const soldOut = await tx.menuItem.findMany({
+        where: {
+          id: { in: itemIds },
+          OR: [{ isAvailable: false }, { isActive: false }],
+        },
+        select: { name: true },
+      });
+      if (soldOut.length > 0) {
+        const names = soldOut.map((i) => i.name).join(", ");
+        throw new Error(
+          `Sold out: ${names}. Remove from the order, then refresh the menu.`,
+        );
+      }
+
       // 1. Find an open shift for this staff (if any) — payments roll into it.
       const openShift = await tx.shift.findFirst({
         where: { staffId: data.staffId, endedAt: null },
