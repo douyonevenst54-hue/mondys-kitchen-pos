@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDailyReport } from "@/lib/orders";
 import { getSettings } from "@/lib/menu";
 import { DailyReportView } from "@/components/reports/DailyReportView";
+import { verifySession } from "@/lib/session";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -11,7 +12,7 @@ async function getSession(): Promise<Session | null> {
   const raw = c.get("mondy_session")?.value;
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Session;
+    return await verifySession(raw);
   } catch {
     return null;
   }

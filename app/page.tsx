@@ -5,6 +5,7 @@ import { CashierShell } from "@/components/cashier/CashierShell";
 import { logout } from "@/app/login/actions";
 import { resolveLogoUrl } from "@/lib/logo";
 import { getCurrentShift } from "@/app/api/orders/actions";
+import { verifySession } from "@/lib/session";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -13,7 +14,7 @@ async function getSession(): Promise<Session | null> {
   const raw = c.get("mondy_session")?.value;
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Session;
+    return await verifySession(raw);
   } catch {
     return null;
   }

@@ -1,10 +1,11 @@
 "use server";
 
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { SESSION_COOKIE, SESSION_MAX_AGE, signSession, verifySession } from "@/lib/session";
 
 const PinSchema = z.object({
   pin: z
@@ -24,14 +25,14 @@ async function setSessionCookie(
 ) {
   const cookieStore = await cookies();
   cookieStore.set(
-    "mondy_session",
-    JSON.stringify({ staffId, name, role, hasOpenShift }),
+    SESSION_COOKIE,
+    await signSession({ staffId, name, role, hasOpenShift }),
     {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: 60 * 60 * 12, // 12 hours — covers a full shift
+      maxAge: SESSION_MAX_AGE, // 12 hours — covers a full shift
     },
   );
 }
@@ -44,22 +45,24 @@ async function setSessionCookie(
 export async function refreshSessionShiftState(hasOpenShift: boolean) {
   const cookieStore = await cookies();
   const raw = cookieStore.get("mondy_session")?.value;
-  if (!raw) return;
-  try {
-    const session = JSON.parse(raw) as {
-      staffId: string;
-      name: string;
-      role: string;
-    };
-    await setSessionCookie(
-      session.staffId,
-      session.name,
-      session.role,
-      hasOpenShift,
-    );
-  } catch {
-    // Corrupted; ignore
-  }
+  const session = await verifySession(raw);
+  if (!session) return;
+  await setSessionCookie(
+    session.staffId,
+    session.name,
+    session.role,
+    hasOpenShift,
+  );
+}
+
+const MAX_FAILURES = 5;
+const LOCK_MINUTES = 15;
+
+async function throttleKey(): Promise<string> {
+  const h = await headers();
+  const ip =
+    h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
+  return `ip:${ip}`;
 }
 
 export async function loginWithPin(formData: FormData): Promise<PinLoginResult> {
@@ -69,6 +72,17 @@ export async function loginWithPin(formData: FormData): Promise<PinLoginResult> 
   }
 
   const { pin } = parsed.data;
+
+  // Stop PIN guessing: after 5 wrong tries from one device, wait 15 minutes.
+  const key = await throttleKey();
+  const throttle = await prisma.loginThrottle.findUnique({ where: { key } });
+  if (throttle?.lockedUntil && throttle.lockedUntil > new Date()) {
+    const mins = Math.ceil((throttle.lockedUntil.getTime() - Date.now()) / 60_000);
+    return {
+      ok: false,
+      error: `Too many wrong PINs. Try again in ${mins} minute${mins === 1 ? "" : "s"}.`,
+    };
+  }
 
   const activeStaff = await prisma.staff.findMany({
     where: { isActive: true },
@@ -84,8 +98,22 @@ export async function loginWithPin(formData: FormData): Promise<PinLoginResult> 
   }
 
   if (!matched) {
-    return { ok: false, error: "Incorrect PIN" };
+    const failures = (throttle?.failures ?? 0) + 1;
+    const lock = failures >= MAX_FAILURES;
+    await prisma.loginThrottle.upsert({
+      where: { key },
+      create: { key, failures: lock ? 0 : failures, lockedUntil: lock ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null },
+      update: { failures: lock ? 0 : failures, lockedUntil: lock ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null },
+    });
+    return {
+      ok: false,
+      error: lock
+        ? `Too many wrong PINs. Try again in ${LOCK_MINUTES} minutes.`
+        : "Incorrect PIN",
+    };
   }
+
+  await prisma.loginThrottle.deleteMany({ where: { key } });
 
   // Check shift status server-side so we know where to send them.
   const openShift = await prisma.shift.findFirst({

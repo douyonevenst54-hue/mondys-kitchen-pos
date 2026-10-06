@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { refreshSessionShiftState } from "@/app/login/actions";
 import { returnPortionsForOrder, sellPortions } from "@/lib/portions";
 import { getStripe } from "@/lib/stripe";
+import { verifySession } from "@/lib/session";
 
 export async function logoutAndRedirect() {
   const c = await cookies();
@@ -92,8 +93,9 @@ type Session = { staffId: string; name: string; role: string };
 async function requireSession(): Promise<Session> {
   const c = await cookies();
   const raw = c.get("mondy_session")?.value;
-  if (!raw) throw new Error("Not authenticated");
-  return JSON.parse(raw) as Session;
+  const session = await verifySession(raw);
+  if (!session) throw new Error("Not authenticated");
+  return session;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

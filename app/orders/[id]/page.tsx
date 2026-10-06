@@ -6,6 +6,7 @@ import { OrdersPageHeader } from "@/components/orders/OrdersPageHeader";
 import { OrderDetailActions } from "@/components/orders/OrderDetailActions";
 import { formatMoney } from "@/lib/money";
 import { paymentLabel } from "@/components/orders/StatsSummary";
+import { verifySession } from "@/lib/session";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -14,7 +15,7 @@ async function getSession(): Promise<Session | null> {
   const raw = c.get("mondy_session")?.value;
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Session;
+    return await verifySession(raw);
   } catch {
     return null;
   }

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CloseShiftForm } from "@/components/shift/CloseShiftForm";
+import { verifySession } from "@/lib/session";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -10,7 +11,7 @@ async function getSession(): Promise<Session | null> {
   const raw = c.get("mondy_session")?.value;
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Session;
+    return await verifySession(raw);
   } catch {
     return null;
   }

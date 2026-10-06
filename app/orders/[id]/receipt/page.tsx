@@ -4,6 +4,7 @@ import { getOrderDetail } from "@/lib/orders";
 import { getSettings } from "@/lib/menu";
 import { resolveLogoUrl } from "@/lib/logo";
 import { ReceiptView } from "@/components/orders/ReceiptView";
+import { verifySession } from "@/lib/session";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -12,7 +13,7 @@ async function getSession(): Promise<Session | null> {
   const raw = c.get("mondy_session")?.value;
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as Session;
+    return await verifySession(raw);
   } catch {
     return null;
   }

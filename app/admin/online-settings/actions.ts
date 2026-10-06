@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { verifySession } from "@/lib/session";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -11,7 +12,8 @@ async function requireManagerOrOwner(): Promise<Session> {
   const c = await cookies();
   const raw = c.get("mondy_session")?.value;
   if (!raw) throw new Error("Not signed in");
-  const session = JSON.parse(raw) as Session;
+  const session = await verifySession(raw);
+  if (!session) throw new Error("Not signed in");
   if (session.role !== "MANAGER" && session.role !== "OWNER") {
     throw new Error("Manager or owner required");
   }

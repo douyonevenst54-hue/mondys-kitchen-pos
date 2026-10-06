@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { verifySession } from "@/lib/session";
 
 export type ManagerStaff = { id: string; name: string; role: "OWNER" | "MANAGER" };
 
@@ -8,22 +9,17 @@ export type ManagerStaff = { id: string; name: string; role: "OWNER" | "MANAGER"
  * Returns the logged-in staff member if they are an active OWNER or MANAGER,
  * otherwise null.
  *
- * The session cookie is plain JSON, so its `role` field can be edited in the
- * browser. We only take the staffId from the cookie and read the role from the
- * database, so a cashier can't promote themselves by editing the cookie.
+ * The cookie is signed, and on top of that the role is read from the
+ * database, so a deactivated or demoted staff member loses access right away
+ * instead of when their cookie expires.
  */
 export async function getManagerFromSession(): Promise<ManagerStaff | null> {
   const c = await cookies();
   const raw = c.get("mondy_session")?.value;
   if (!raw) return null;
 
-  let staffId: unknown;
-  try {
-    staffId = (JSON.parse(raw) as { staffId?: unknown }).staffId;
-  } catch {
-    return null;
-  }
-  if (typeof staffId !== "string" || staffId.length === 0) return null;
+  const staffId = (await verifySession(raw))?.staffId;
+  if (!staffId) return null;
 
   const staff = await prisma.staff.findUnique({
     where: { id: staffId },
@@ -43,13 +39,8 @@ export async function getStaffFromSession(): Promise<SessionStaff | null> {
   const raw = c.get("mondy_session")?.value;
   if (!raw) return null;
 
-  let staffId: unknown;
-  try {
-    staffId = (JSON.parse(raw) as { staffId?: unknown }).staffId;
-  } catch {
-    return null;
-  }
-  if (typeof staffId !== "string" || staffId.length === 0) return null;
+  const staffId = (await verifySession(raw))?.staffId;
+  if (!staffId) return null;
 
   const staff = await prisma.staff.findUnique({
     where: { id: staffId },

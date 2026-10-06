@@ -434,3 +434,15 @@ model PortionEvent {
   @@index([menuItemId, createdAt])
   @@index([orderId])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOGIN THROTTLE — stops someone from guessing PINs from the internet.
+// One row per device IP. After 5 wrong PINs that IP is locked for 15 minutes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LoginThrottle {
+  key         String    @id // "ip:203.0.113.7"
+  failures    Int       @default(0)
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}
