@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Fraunces, DM_Sans } from "next/font/google";
 import "./globals.css";
+import { IdleLogout } from "@/components/IdleLogout";
+import { IDLE_MINUTES } from "@/lib/session";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -27,7 +29,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${fraunces.variable} ${dmSans.variable}`}>
-      <body>{children}</body>
+      <body>
+        {children}
+        <IdleLogout idleMinutes={IDLE_MINUTES} />
+      </body>
     </html>
   );
 }

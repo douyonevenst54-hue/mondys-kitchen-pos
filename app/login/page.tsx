@@ -1,7 +1,10 @@
 import { MondysLogo } from "@/components/login/MondysLogo";
 import { PinKeypad } from "@/components/login/PinKeypad";
 
-export default function LoginPage() {
+type SearchParams = Promise<{ reason?: string }>;
+
+export default async function LoginPage({ searchParams }: { searchParams: SearchParams }) {
+  const { reason } = await searchParams;
   return (
     <main className="min-h-screen w-full bg-mondy-yellow relative overflow-hidden">
       {/* Background gradient — mimics the brand asset's left-to-right warming */}
@@ -60,6 +63,11 @@ export default function LoginPage() {
               <p className="mt-1 font-display text-lg text-mondy-ink">
                 Enter your PIN
               </p>
+              {reason === "idle" && (
+                <p role="status" className="mt-3 rounded-xl bg-mondy-cream px-3 py-2 font-sans text-sm text-mondy-ink">
+                  You were signed out because the screen wasn&apos;t used for a few minutes.
+                </p>
+              )}
             </header>
             <PinKeypad />
           </div>

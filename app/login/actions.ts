@@ -5,7 +5,12 @@ import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { SESSION_COOKIE, SESSION_MAX_AGE, signSession, verifySession } from "@/lib/session";
+import {
+  SESSION_COOKIE,
+  sessionCookieOptions,
+  signSession,
+  verifySession,
+} from "@/lib/session";
 
 const PinSchema = z.object({
   pin: z
@@ -22,18 +27,13 @@ async function setSessionCookie(
   name: string,
   role: string,
   hasOpenShift: boolean,
+  iat?: number, // keep the original login time when re-issuing
 ) {
   const cookieStore = await cookies();
   cookieStore.set(
     SESSION_COOKIE,
-    await signSession({ staffId, name, role, hasOpenShift }),
-    {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: SESSION_MAX_AGE, // 12 hours — covers a full shift
-    },
+    await signSession({ staffId, name, role, hasOpenShift, iat }),
+    sessionCookieOptions(),
   );
 }
 
@@ -52,6 +52,7 @@ export async function refreshSessionShiftState(hasOpenShift: boolean) {
     session.name,
     session.role,
     hasOpenShift,
+    session.iat,
   );
 }
 

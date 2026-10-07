@@ -11,15 +11,42 @@
  */
 
 export const SESSION_COOKIE = "mondy_session";
-export const SESSION_MAX_AGE = 60 * 60 * 12; // 12 hours: a full shift
+export const SESSION_MAX_AGE = 60 * 60 * 12; // 12 hours: never stay signed in longer than a shift
+
+/**
+ * Sign out after this many minutes with nobody touching the screen.
+ * Set SESSION_IDLE_MINUTES in Vercel / .env to change it (1–60, default 5).
+ */
+export const IDLE_MINUTES = (() => {
+  const n = Number(process.env.SESSION_IDLE_MINUTES);
+  return Number.isFinite(n) && n >= 1 && n <= 60 ? Math.round(n) : 5;
+})();
+
+/**
+ * The server allows a little longer than the on-screen timer, because the
+ * screen only checks in with the server about once a minute while in use.
+ * Someone who bypasses the screen timer is still cut off at idle + 2 minutes.
+ */
+export const SESSION_IDLE_SECONDS = IDLE_MINUTES * 60 + 120;
 
 export type SessionData = {
   staffId: string;
   name: string;
   role: string;
   hasOpenShift?: boolean;
-  exp: number; // unix seconds
+  iat: number; // unix seconds: when they entered their PIN
+  exp: number; // unix seconds: idle cut-off, pushed forward while they're active
 };
+
+export function sessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_IDLE_SECONDS,
+  };
+}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -55,13 +82,21 @@ function getKey(): Promise<CryptoKey> {
   return keyPromise;
 }
 
+/**
+ * Sign a session. Pass `iat` to keep the original login time (when
+ * refreshing); leave it out for a brand-new login.
+ */
 export async function signSession(
-  data: Omit<SessionData, "exp">,
-  maxAgeSeconds = SESSION_MAX_AGE,
+  data: Omit<SessionData, "exp" | "iat"> & { iat?: number },
+  idleSeconds = SESSION_IDLE_SECONDS,
 ): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  const iat = data.iat ?? now;
   const payload: SessionData = {
     ...data,
-    exp: Math.floor(Date.now() / 1000) + maxAgeSeconds,
+    iat,
+    // Idle cut-off, but never past the 12-hour cap from login.
+    exp: Math.min(now + idleSeconds, iat + SESSION_MAX_AGE),
   };
   const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
   const sig = await crypto.subtle.sign("HMAC", await getKey(), encoder.encode(body));
@@ -91,7 +126,9 @@ export async function verifySession(raw: string | undefined | null): Promise<Ses
       typeof data.staffId !== "string" ||
       typeof data.role !== "string" ||
       typeof data.exp !== "number" ||
-      data.exp < Math.floor(Date.now() / 1000)
+      typeof data.iat !== "number" ||
+      data.exp < Math.floor(Date.now() / 1000) ||
+      data.iat + SESSION_MAX_AGE < Math.floor(Date.now() / 1000)
     ) {
       return null;
     }
@@ -102,4 +139,11 @@ export async function verifySession(raw: string | undefined | null): Promise<Ses
     }
     return null;
   }
+}
+
+/** Same session, idle timer restarted (login time and 12-hour cap unchanged). */
+export function refreshSession(session: SessionData): Promise<string> {
+  const { exp: _exp, ...rest } = session;
+  void _exp;
+  return signSession(rest);
 }
