@@ -47,6 +47,9 @@ model MenuItem {
   portionsLeft    Int?     // null = not counted; otherwise portions ready to sell
   availableUntil  DateTime? // optional: hide item after this date (e.g. seasonal special)
   isActive        Boolean  @default(true) // soft delete
+  showOnRegister  Boolean  @default(true) // manager can hide from the staff register
+  showOnline      Boolean  @default(true) // manager can hide from the customer order page
+  serveDays       Int      @default(127)  // weekly schedule bitmask: bit 0 = Sunday … bit 6 = Saturday (127 = every day)
   sortOrder       Int      @default(0)
   taxable         Boolean  @default(true) // some items (e.g. certain groceries) may be non-taxable
   createdAt       DateTime @default(now())
@@ -397,6 +400,8 @@ model RestaurantSettings {
   onlineOrderingPaused    Boolean  @default(false)
   businessHours           Json?    // { "monday": "11:00-21:00", "tuesday": null, ... }
   onlinePrepTimeMinutes   Int      @default(20)
+  hideSoldOutOnRegister   Boolean  @default(false) // false = show greyed out with "Sold out"
+  hideSoldOutOnline       Boolean  @default(false) // false = show as "Sold out today"
   updatedAt           DateTime @updatedAt
 }
 

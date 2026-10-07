@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getMenuForCashier } from "@/lib/menu";
+import { getMenuForManager } from "@/lib/menu";
 import { getManagerFromSession } from "@/lib/staff";
 import { AvailabilityBoard } from "@/components/menu/AvailabilityBoard";
 
@@ -8,7 +8,7 @@ export default async function MenuAvailabilityPage() {
   const manager = await getManagerFromSession();
   if (!manager) redirect("/");
 
-  const categories = await getMenuForCashier();
+  const categories = await getMenuForManager();
 
   return (
     <AvailabilityBoard

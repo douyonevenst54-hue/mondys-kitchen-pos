@@ -9,6 +9,7 @@ import { refreshSessionShiftState } from "@/app/login/actions";
 import { returnPortionsForOrder, sellPortions } from "@/lib/portions";
 import { getStripe } from "@/lib/stripe";
 import { verifySession } from "@/lib/session";
+import { isOrderable, weekdayIn } from "@/lib/menu-visibility";
 
 export async function logoutAndRedirect() {
   const c = await cookies();
@@ -133,20 +134,29 @@ export async function submitCheckout(input: CheckoutInput) {
 
   try {
     const order = await prisma.$transaction(async (tx) => {
-      // 0. Refuse items that were marked sold out after this register loaded
-      // its menu (another device may have changed it).
+      // 0. Refuse items that were sold out, hidden, or taken off today's
+      // schedule after this register loaded its menu (another device may
+      // have changed it).
       const itemIds = [...new Set(data.lines.map((l) => l.menuItemId))];
-      const soldOut = await tx.menuItem.findMany({
-        where: {
-          id: { in: itemIds },
-          OR: [{ isAvailable: false }, { isActive: false }],
+      const tzRow = await tx.restaurantSettings.findFirst({ select: { timezone: true } });
+      const weekday = weekdayIn(tzRow?.timezone ?? "America/New_York");
+      const rows = await tx.menuItem.findMany({
+        where: { id: { in: itemIds } },
+        select: {
+          name: true,
+          isActive: true,
+          isAvailable: true,
+          portionsLeft: true,
+          showOnRegister: true,
+          showOnline: true,
+          serveDays: true,
         },
-        select: { name: true },
       });
-      if (soldOut.length > 0) {
-        const names = soldOut.map((i) => i.name).join(", ");
+      const blocked = rows.filter((i) => !isOrderable(i, "register", weekday));
+      if (blocked.length > 0) {
+        const names = blocked.map((i) => i.name).join(", ");
         throw new Error(
-          `Sold out: ${names}. Remove from the order, then refresh the menu.`,
+          `Not available right now: ${names}. Remove from the order, then refresh the menu.`,
         );
       }
 

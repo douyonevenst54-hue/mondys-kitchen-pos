@@ -8,6 +8,7 @@ import { getStripe, toCents } from "@/lib/stripe";
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
 import { onlineOpenState } from "@/lib/online-hours";
+import { isListed, isSoldOut, servedOn, weekdayIn } from "@/lib/menu-visibility";
 
 type Tx = Prisma.TransactionClient;
 
@@ -40,6 +41,8 @@ export type OnlineMenuCategory = { id: string; name: string; items: OnlineMenuIt
 
 export async function getOnlineMenu(): Promise<OnlineMenuCategory[]> {
   const now = new Date();
+  const settings = await getSettings();
+  const weekday = weekdayIn(settings.timezone);
   const categories = await prisma.category.findMany({
     where: { isActive: true },
     orderBy: { sortOrder: "asc" },
@@ -61,9 +64,10 @@ export async function getOnlineMenu(): Promise<OnlineMenuCategory[]> {
     .map((c) => ({
       id: c.id,
       name: c.name,
-      items: c.menuItems.map((i) => {
-        const soldOut =
-          !i.isAvailable || (i.portionsLeft !== null && i.portionsLeft <= 0);
+      items: c.menuItems
+        .filter((i) => isListed(i, "online", weekday, settings.hideSoldOutOnline))
+        .map((i) => {
+        const soldOut = isSoldOut(i);
         return {
           id: i.id,
           name: i.name,
@@ -115,14 +119,23 @@ type PricedLine = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-async function priceCart(lines: CartLineInput[], taxRate: number) {
+async function priceCart(lines: CartLineInput[], taxRate: number, timezone: string) {
   if (lines.length === 0) throw new OnlineOrderError("Your cart is empty");
   if (lines.length > MAX_LINES) throw new OnlineOrderError("That order is too large to place online. Please call us.");
 
   const ids = [...new Set(lines.map((l) => l.menuItemId))];
   const items = await prisma.menuItem.findMany({
     where: { id: { in: ids }, isActive: true, category: { isActive: true } },
-    select: { id: true, name: true, price: true, isAvailable: true, portionsLeft: true, availableUntil: true },
+    select: {
+      id: true,
+      name: true,
+      price: true,
+      isAvailable: true,
+      portionsLeft: true,
+      availableUntil: true,
+      showOnline: true,
+      serveDays: true,
+    },
   });
   const byId = new Map(items.map((i) => [i.id, i]));
 
@@ -130,8 +143,12 @@ async function priceCart(lines: CartLineInput[], taxRate: number) {
   for (const l of lines) wanted.set(l.menuItemId, (wanted.get(l.menuItemId) ?? 0) + l.quantity);
 
   const now = new Date();
+  const weekday = weekdayIn(timezone);
   for (const [id, qty] of wanted) {
     const item = byId.get(id);
+    if (item && (!item.showOnline || !servedOn(item.serveDays, weekday))) {
+      throw new OnlineOrderError(`${item.name} isn't on today's menu. Remove it to continue.`);
+    }
     if (!item || !item.isAvailable || (item.availableUntil && item.availableUntil <= now)) {
       throw new OnlineOrderError(
         item ? `${item.name} just sold out. Remove it to continue.` : "An item in your cart is no longer on the menu.",
@@ -215,7 +232,7 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
   const { settings, state } = await getOnlineStatus();
   if (!state.open) throw new OnlineOrderError(state.message);
 
-  const { priced, subtotal, taxAmount, total } = await priceCart(input.lines, settings.taxRate);
+  const { priced, subtotal, taxAmount, total } = await priceCart(input.lines, settings.taxRate, settings.timezone);
 
   if (input.payment === "pickup" && total > PAY_AT_PICKUP_LIMIT) {
     throw new OnlineOrderError(

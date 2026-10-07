@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { isListed, isSoldOut, servedOn, weekdayIn } from "@/lib/menu-visibility";
 
 export type MenuItemWithModifiers = {
   id: string;
@@ -18,13 +19,23 @@ export type CategoryWithItems = {
   items: MenuItemWithModifiers[];
 };
 
-/**
- * Loads the full menu for the cashier UI: every active category with its
- * active items. Items keep their `isAvailable` flag so the UI can show
- * a "Sold Out" overlay rather than hiding them.
- */
-export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
-  const categories = await prisma.category.findMany({
+export type ManagedMenuItem = MenuItemWithModifiers & {
+  showOnRegister: boolean;
+  showOnline: boolean;
+  serveDays: number;
+  servedToday: boolean;
+  soldOut: boolean;
+};
+
+export type ManagedCategory = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  items: ManagedMenuItem[];
+};
+
+async function loadMenu() {
+  return prisma.category.findMany({
     where: { isActive: true },
     orderBy: { sortOrder: "asc" },
     include: {
@@ -39,7 +50,15 @@ export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
       },
     },
   });
+}
 
+/**
+ * Every active dish, including hidden and off-schedule ones. For the manager
+ * screens (Daily menu, Sold-out list, Portion counts).
+ */
+export async function getMenuForManager(): Promise<ManagedCategory[]> {
+  const [categories, settings] = await Promise.all([loadMenu(), getSettings()]);
+  const weekday = weekdayIn(settings.timezone);
   return categories.map((c) => ({
     id: c.id,
     name: c.name,
@@ -54,8 +73,44 @@ export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
       hasSpiceModifier: item.modifierGroups.some(
         (mg) => mg.modifierGroup.name === "Spice Level",
       ),
+      showOnRegister: item.showOnRegister,
+      showOnline: item.showOnline,
+      serveDays: item.serveDays,
+      servedToday: servedOn(item.serveDays, weekday),
+      soldOut: isSoldOut(item),
     })),
   }));
+}
+
+/**
+ * The register menu: only dishes on today's menu and not hidden by a manager.
+ * Sold-out dishes stay listed (greyed out) unless the restaurant chose to hide
+ * them.
+ */
+export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
+  const [categories, settings] = await Promise.all([loadMenu(), getSettings()]);
+  const weekday = weekdayIn(settings.timezone);
+
+  return categories
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      sortOrder: c.sortOrder,
+      items: c.menuItems
+        .filter((item) => isListed(item, "register", weekday, settings.hideSoldOutOnRegister))
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          price: Number(item.price),
+          isAvailable: !isSoldOut(item),
+          portionsLeft: item.portionsLeft,
+          categoryId: item.categoryId,
+          hasSpiceModifier: item.modifierGroups.some(
+            (mg) => mg.modifierGroup.name === "Spice Level",
+          ),
+        })),
+    }))
+    .filter((c) => c.items.length > 0);
 }
 
 export async function getSettings() {
@@ -88,6 +143,9 @@ export async function getSettings() {
     onlineOrderingPaused: settings?.onlineOrderingPaused ?? false,
     businessHours,
     onlinePrepTimeMinutes: settings?.onlinePrepTimeMinutes ?? 20,
+    // Sold-out display (false = still show, marked sold out)
+    hideSoldOutOnRegister: settings?.hideSoldOutOnRegister ?? false,
+    hideSoldOutOnline: settings?.hideSoldOutOnline ?? false,
   };
 }
 
