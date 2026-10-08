@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import type { CategoryWithItems, MenuItemWithModifiers } from "@/lib/menu";
-import { useCart, type SpiceLevel } from "./CartContext";
+import { useCart } from "./CartContext";
 import { formatMoney } from "@/lib/money";
-import { Flame } from "lucide-react";
-import { SpiceModifierModal } from "./SpiceModifierModal";
+import { SlidersHorizontal } from "lucide-react";
+import { OptionPicker } from "@/components/menu/OptionPicker";
 
 type Props = {
   categories: CategoryWithItems[];
@@ -23,13 +23,16 @@ export function MenuGrid({
   const trimmed = searchValue.trim().toLowerCase();
   const isSearching = trimmed.length > 0;
   const { addItem } = useCart();
-  // Item currently awaiting spice selection. null = no modal.
-  const [spicePending, setSpicePending] = useState<MenuItemWithModifiers | null>(null);
+  // Dish waiting for its choices (hot/iced, protein…). null = no picker open.
+  const [choosing, setChoosing] = useState<MenuItemWithModifiers | null>(null);
 
   const itemsToShow = useMemo(() => {
     if (isSearching) {
+      // Typing "7" finds menu item #7, so staff can ring up "a number 7".
       return categories.flatMap((c) =>
-        c.items.filter((i) => i.name.toLowerCase().includes(trimmed)),
+        c.items.filter(
+          (i) => i.name.toLowerCase().includes(trimmed) || (i.menuNumber != null && String(i.menuNumber) === trimmed),
+        ),
       );
     }
     const active = categories.find((c) => c.id === activeCategoryId);
@@ -37,23 +40,11 @@ export function MenuGrid({
   }, [categories, activeCategoryId, isSearching, trimmed]);
 
   function handleTileTap(item: MenuItemWithModifiers) {
-    if (item.hasSpiceModifier) {
-      setSpicePending(item);
+    if (item.optionGroups.length > 0) {
+      setChoosing(item);
     } else {
       addItem(item.id, item.name, item.price);
     }
-  }
-
-  function handleSpiceSelect(spice: SpiceLevel) {
-    if (!spicePending) return;
-    addItem(spicePending.id, spicePending.name, spicePending.price, spice);
-    setSpicePending(null);
-  }
-
-  function handleSpiceSkip() {
-    if (!spicePending) return;
-    addItem(spicePending.id, spicePending.name, spicePending.price);
-    setSpicePending(null);
   }
 
   return (
@@ -113,13 +104,17 @@ export function MenuGrid({
         )}
       </div>
 
-      {spicePending && (
-        <SpiceModifierModal
-          itemName={spicePending.name}
-          itemPrice={spicePending.price}
-          onSelect={handleSpiceSelect}
-          onSkip={handleSpiceSkip}
-          onClose={() => setSpicePending(null)}
+      {choosing && (
+        <OptionPicker
+          name={choosing.name}
+          description={choosing.description}
+          basePrice={choosing.price}
+          groups={choosing.optionGroups}
+          onClose={() => setChoosing(null)}
+          onAdd={(ids, summary, unitPrice) => {
+            addItem(choosing.id, choosing.name, unitPrice, ids, summary);
+            setChoosing(null);
+          }}
         />
       )}
     </div>
@@ -146,8 +141,18 @@ function MenuTile({
           : "bg-white shadow-sm ring-1 ring-mondy-border hover:-translate-y-0.5 hover:shadow-md hover:ring-mondy-red/40 active:scale-[0.97]"
       }`}
     >
-      {/* Header: item name */}
+      {/* Header: menu number, name, signature mark */}
       <div className="flex-1">
+        {(item.menuNumber != null || item.isSignature) && (
+          <p className="mb-1 flex items-center gap-1.5 font-sans text-[11px] font-semibold text-mondy-red-dark">
+            {item.menuNumber != null && <span className="tabular">No. {item.menuNumber}</span>}
+            {item.isSignature && (
+              <span title="Rosewood Signature" aria-label="Rosewood Signature">
+                ★ Signature
+              </span>
+            )}
+          </p>
+        )}
         <p
           className={`font-display text-sm font-semibold leading-tight sm:text-base ${
             soldOut ? "text-mondy-muted" : "text-mondy-ink"
@@ -157,7 +162,7 @@ function MenuTile({
         </p>
       </div>
 
-      {/* Footer: price + spice marker */}
+      {/* Footer: price + choices marker */}
       <div className="mt-2 flex items-end justify-between">
         <span
           className={`font-display text-lg font-bold tabular sm:text-xl ${
@@ -177,13 +182,9 @@ function MenuTile({
             {item.portionsLeft} left
           </span>
         )}
-        {item.hasSpiceModifier && !soldOut && (
-          <span
-            title="Spice level customizable"
-            aria-label="Spice level customizable"
-            className="text-mondy-red-soft"
-          >
-            <Flame className="h-4 w-4" />
+        {item.optionGroups.length > 0 && !soldOut && (
+          <span title="Has choices" aria-label="Has choices" className="text-mondy-red-soft">
+            <SlidersHorizontal className="h-4 w-4" />
           </span>
         )}
       </div>

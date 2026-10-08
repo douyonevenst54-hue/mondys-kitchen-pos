@@ -50,6 +50,8 @@ model MenuItem {
   showOnRegister  Boolean  @default(true) // manager can hide from the staff register
   showOnline      Boolean  @default(true) // manager can hide from the customer order page
   serveDays       Int      @default(127)  // weekly schedule bitmask: bit 0 = Sunday … bit 6 = Saturday (127 = every day)
+  menuNumber      Int?                    // number printed on the paper menu ("I'll have a number 7")
+  isSignature     Boolean  @default(false) // ★ Rosewood Signature
   sortOrder       Int      @default(0)
   taxable         Boolean  @default(true) // some items (e.g. certain groceries) may be non-taxable
   createdAt       DateTime @default(now())
@@ -66,6 +68,7 @@ model MenuItem {
 
 model ModifierGroup {
   id           String   @id @default(cuid())
+  key          String?  @unique       // stable id for scripts, e.g. "rw-wings-sauce"; name can repeat
   name         String                 // "Choose a side", "Spice level"
   isRequired   Boolean  @default(false)
   minSelect    Int      @default(0)   // e.g. 1 for required single-select

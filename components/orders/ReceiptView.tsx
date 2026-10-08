@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowLeft, Printer } from "lucide-react";
-import { MondysEmblem } from "@/components/login/MondysEmblem";
 import { formatMoney } from "@/lib/money";
 import { paymentLabel } from "./StatsSummary";
 import type { OrderDetail } from "@/lib/orders";
@@ -59,8 +58,8 @@ export function ReceiptView({ order, settings, logoUrl }: Props) {
       >
         {/* Header */}
         <header className="text-center">
-          <div className="mx-auto mb-2 grid h-14 w-14 place-items-center">
-            {logoUrl ? (
+          {logoUrl && (
+            <div className="mx-auto mb-2 grid h-14 w-14 place-items-center">
               <Image
                 src={logoUrl}
                 alt={settings.name}
@@ -68,10 +67,8 @@ export function ReceiptView({ order, settings, logoUrl }: Props) {
                 height={56}
                 className="h-14 w-14 object-contain"
               />
-            ) : (
-              <MondysEmblem size={48} className="text-mondy-red print:text-black" />
-            )}
-          </div>
+            </div>
+          )}
           <h1 className="font-display text-xl font-bold uppercase tracking-wide">
             {settings.name}
           </h1>

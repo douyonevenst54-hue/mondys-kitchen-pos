@@ -10,6 +10,8 @@ import { returnPortionsForOrder, sellPortions } from "@/lib/portions";
 import { getStripe } from "@/lib/stripe";
 import { verifySession } from "@/lib/session";
 import { isOrderable, weekdayIn } from "@/lib/menu-visibility";
+import { checkSelection } from "@/lib/options";
+import { loadOptionGroups } from "@/lib/options-db";
 
 export async function logoutAndRedirect() {
   const c = await cookies();
@@ -47,7 +49,7 @@ const LineInputSchema = z.object({
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
   nameSnapshot: z.string(),
-  spiceLevel: z.enum(["Mild", "Medium", "Hot"]).optional().nullable(),
+  modifierIds: z.array(z.string().max(64)).max(40).optional().default([]),
 });
 
 const DiscountInputSchema = z
@@ -143,6 +145,8 @@ export async function submitCheckout(input: CheckoutInput) {
       const rows = await tx.menuItem.findMany({
         where: { id: { in: itemIds } },
         select: {
+          id: true,
+          price: true,
           name: true,
           isActive: true,
           isAvailable: true,
@@ -158,6 +162,37 @@ export async function submitCheckout(input: CheckoutInput) {
         throw new Error(
           `Not available right now: ${names}. Remove from the order, then refresh the menu.`,
         );
+      }
+
+      // 0b. Check every line's choices and price against the database. The
+      // screen's price must match what the server works out, so a stale or
+      // tampered register can't sell at the wrong price.
+      const groupsByItem = await loadOptionGroups(tx, itemIds);
+      const rowById = new Map(rows.map((r) => [r.id, r]));
+      const pricedLines = data.lines.map((l) => {
+        const row = rowById.get(l.menuItemId);
+        if (!row) throw new Error("An item in the order is no longer on the menu. Refresh the menu.");
+        const sel = checkSelection(groupsByItem.get(l.menuItemId) ?? [], l.modifierIds);
+        if (!sel.ok) throw new Error(`${row.name}: ${sel.error}`);
+        const unitPrice = Math.round((Number(row.price) + sel.extra) * 100) / 100;
+        if (Math.abs(unitPrice - l.unitPrice) > 0.005) {
+          throw new Error(`The price of ${row.name} changed. Refresh the register and ring it up again.`);
+        }
+        return {
+          menuItemId: row.id,
+          quantity: l.quantity,
+          unitPrice,
+          nameSnapshot: row.name,
+          lineTotal: Math.round(unitPrice * l.quantity * 100) / 100,
+          notes: sel.summary || null,
+          modifiers: {
+            create: sel.chosen.map((o) => ({ modifierId: o.id, nameSnapshot: o.name, priceAtTime: o.price })),
+          },
+        };
+      });
+      const serverSubtotal = Math.round(pricedLines.reduce((s, l) => s + l.lineTotal, 0) * 100) / 100;
+      if (Math.abs(serverSubtotal - data.subtotal) > 0.01) {
+        throw new Error("The order total doesn't match the menu prices. Refresh the register and try again.");
       }
 
       // 1. Find an open shift for this staff (if any) — payments roll into it.
@@ -197,14 +232,8 @@ export async function submitCheckout(input: CheckoutInput) {
           taxExempt: false,
           completedAt: new Date(),
           items: {
-            create: data.lines.map((l) => ({
-              menuItemId: l.menuItemId,
-              quantity: l.quantity,
-              unitPrice: l.unitPrice,
-              nameSnapshot: l.nameSnapshot,
-              lineTotal: Math.round(l.unitPrice * l.quantity * 100) / 100,
-              notes: l.spiceLevel ? `Spice: ${l.spiceLevel}` : null,
-            })),
+            // Prices, names and choices as checked against the database above.
+            create: pricedLines,
           },
         },
         include: { items: true },

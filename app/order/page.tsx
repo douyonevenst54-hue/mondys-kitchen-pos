@@ -5,8 +5,8 @@ import { resolveLogoUrl } from "@/lib/logo";
 import { OnlineOrderApp } from "@/components/online/OnlineOrderApp";
 
 export const metadata: Metadata = {
-  title: "Order online · Mondy's Kitchen",
-  description: "Order Haitian food from Mondy's Kitchen for pickup.",
+  title: "Order online · Rosewood Cafe by Mondy's",
+  description: "Order breakfast, bowls, grill favorites, coffee and smoothies from Rosewood Cafe by Mondy's for pickup.",
 };
 
 export default async function OrderPage() {

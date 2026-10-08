@@ -6,7 +6,8 @@
  *   1. It isn't deleted (isActive)
  *   2. A manager hasn't hidden it on that channel (showOnRegister / showOnline)
  *   3. It's on today's weekly schedule (serveDays)
- *   4. It isn't sold out, OR the restaurant chose to still show sold-out dishes
+ *   4. It has a price (new dishes start at 0 = "needs a price")
+ *   5. It isn't sold out, OR the restaurant chose to still show sold-out dishes
  */
 
 export const ALL_DAYS = 127;
@@ -41,6 +42,7 @@ export function weekdayIn(timezone = "America/New_York", at: Date = new Date()):
 }
 
 type ItemFlags = {
+  price: number | { valueOf(): string | number }; // Prisma Decimal or number
   isActive: boolean;
   isAvailable: boolean;
   portionsLeft: number | null;
@@ -48,6 +50,11 @@ type ItemFlags = {
   showOnline: boolean;
   serveDays: number;
 };
+
+/** New dishes start at $0 until a manager sets a price. */
+export function needsPrice(item: Pick<ItemFlags, "price">): boolean {
+  return !(Number(item.price) > 0);
+}
 
 export function isSoldOut(item: Pick<ItemFlags, "isAvailable" | "portionsLeft">): boolean {
   return !item.isAvailable || (item.portionsLeft !== null && item.portionsLeft <= 0);
@@ -61,6 +68,7 @@ export function isListed(
   hideSoldOut: boolean,
 ): boolean {
   if (!item.isActive) return false;
+  if (needsPrice(item)) return false;
   if (channel === "register" ? !item.showOnRegister : !item.showOnline) return false;
   if (!servedOn(item.serveDays, weekday)) return false;
   if (hideSoldOut && isSoldOut(item)) return false;

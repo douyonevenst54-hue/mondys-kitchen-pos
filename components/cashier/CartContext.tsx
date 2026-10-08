@@ -7,13 +7,13 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
+import { selectionKey } from "@/lib/options";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type OrderType = "DINE_IN" | "TAKEOUT" | "DELIVERY";
-export type SpiceLevel = "Mild" | "Medium" | "Hot";
 
 export type CartLine = {
   // A unique id PER LINE (not per menu item) so the same item with
@@ -21,9 +21,10 @@ export type CartLine = {
   lineId: string;
   menuItemId: string;
   name: string;
-  unitPrice: number;
+  unitPrice: number; // base price + chosen options
   quantity: number;
-  spiceLevel?: SpiceLevel;
+  optionIds: string[]; // chosen options (modifier ids)
+  summary: string; // "Iced · Oat · Flavor: Vanilla" for the cart and kitchen
   notes?: string;
 };
 
@@ -56,7 +57,8 @@ type Action =
       menuItemId: string;
       name: string;
       unitPrice: number;
-      spiceLevel?: "Mild" | "Medium" | "Hot";
+      optionIds: string[];
+      summary: string;
     }
   | { type: "INCREMENT"; lineId: string }
   | { type: "DECREMENT"; lineId: string }
@@ -92,14 +94,11 @@ const initialState: CartState = {
 function reducer(state: CartState, action: Action): CartState {
   switch (action.type) {
     case "ADD_ITEM": {
-      // Dedupe key: same menu item AND same spice level (or both undefined).
-      // Different spice levels → separate lines (because they're literally
-      // different dishes to the kitchen).
+      // Same dish with the same choices → one line, quantity + 1.
+      // Different choices → separate lines (different plates to the kitchen).
+      const key = selectionKey(action.menuItemId, action.optionIds);
       const existing = state.lines.find(
-        (l) =>
-          l.menuItemId === action.menuItemId &&
-          l.spiceLevel === action.spiceLevel &&
-          !l.notes,
+        (l) => selectionKey(l.menuItemId, l.optionIds) === key && !l.notes,
       );
       if (existing) {
         return {
@@ -121,7 +120,8 @@ function reducer(state: CartState, action: Action): CartState {
             name: action.name,
             unitPrice: action.unitPrice,
             quantity: 1,
-            spiceLevel: action.spiceLevel,
+            optionIds: action.optionIds,
+            summary: action.summary,
           },
         ],
       };
@@ -215,7 +215,8 @@ type CartContextValue = {
     menuItemId: string,
     name: string,
     unitPrice: number,
-    spiceLevel?: SpiceLevel,
+    optionIds?: string[],
+    summary?: string,
   ) => void;
   increment: (lineId: string) => void;
   decrement: (lineId: string) => void;
@@ -298,13 +299,14 @@ export function CartProvider({
       tipAmount,
       deliveryFee,
       total,
-      addItem: (menuItemId, name, unitPrice, spiceLevel) =>
+      addItem: (menuItemId, name, unitPrice, optionIds = [], summary = "") =>
         dispatch({
           type: "ADD_ITEM",
           menuItemId,
           name,
           unitPrice,
-          spiceLevel,
+          optionIds,
+          summary,
         }),
       increment: (lineId) => dispatch({ type: "INCREMENT", lineId }),
       decrement: (lineId) => dispatch({ type: "DECREMENT", lineId }),

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { MondysEmblem } from "@/components/login/MondysEmblem";
 import { resolveLogoUrl } from "@/lib/logo";
 import Image from "next/image";
 
@@ -21,20 +20,18 @@ export function OrdersPageHeader({
   return (
     <header className="flex items-center justify-between border-b border-mondy-border bg-white px-4 py-3 sm:px-6">
       <div className="flex items-center gap-3">
-        {logoUrl ? (
+        {logoUrl && (
           <Image
             src={logoUrl}
-            alt="Mondy's Kitchen"
+            alt="Rosewood Cafe by Mondy's"
             width={32}
             height={32}
             className="h-8 w-8 object-contain"
           />
-        ) : (
-          <MondysEmblem size={32} className="text-mondy-red" />
         )}
         <div className="leading-tight">
-          <p className="font-sans text-[10px] uppercase tracking-[0.22em] text-mondy-red-dark">
-            {subtitle ?? "Mondy's Kitchen"}
+          <p className="font-sans text-xs font-semibold text-mondy-red-dark">
+            {subtitle ?? "Rosewood Cafe by Mondy's"}
           </p>
           <h1 className="font-display text-lg font-bold text-mondy-ink">
             {title}

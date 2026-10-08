@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, CalendarDays } from "lucide-react";
+import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, CalendarDays, Tag } from "lucide-react";
 import { useState } from "react";
 import { ShiftStatus } from "./ShiftStatus";
 
@@ -32,31 +32,22 @@ export function TopBar({
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-mondy-border bg-white px-3 sm:gap-4 sm:px-5">
       {/* Wordmark */}
       <div className="flex items-center gap-2">
-        {logoUrl ? (
+        {logoUrl && (
           <Image
             src={logoUrl}
-            alt="Mondy's Kitchen"
+            alt="Rosewood Cafe by Mondy's"
             width={36}
             height={36}
             priority
             className="h-9 w-9 object-contain"
           />
-        ) : (
-          <div
-            aria-hidden
-            className="grid h-9 w-9 place-items-center rounded-xl bg-mondy-yellow shadow-inner ring-1 ring-mondy-yellow-deep/30"
-          >
-            <span className="font-display text-lg font-black leading-none text-mondy-red">
-              M
-            </span>
-          </div>
         )}
-        <div className="hidden flex-col leading-none sm:flex">
-          <span className="font-display text-base font-black text-mondy-red">
-            MONDY&apos;S
+        <div className="flex flex-col leading-none">
+          <span className="font-display text-[15px] font-black uppercase tracking-tight text-mondy-ink sm:text-base">
+            Rosewood<span className="hidden sm:inline"> Cafe</span>
           </span>
-          <span className="font-sans text-[10px] font-semibold tracking-[0.2em] text-mondy-muted">
-            KITCHEN
+          <span className="mt-0.5 font-sans text-[10px] font-medium text-mondy-red-dark">
+            by Mondy&apos;s
           </span>
         </div>
       </div>
@@ -170,6 +161,15 @@ export function TopBar({
                 >
                   <CalendarDays className="h-4 w-4 text-mondy-muted" aria-hidden />
                   Daily menu
+                </a>
+              )}
+              {(staffRole === "OWNER" || staffRole === "MANAGER") && (
+                <a
+                  href="/menu/prices"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <Tag className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Prices
                 </a>
               )}
               {(staffRole === "OWNER" || staffRole === "MANAGER") && (

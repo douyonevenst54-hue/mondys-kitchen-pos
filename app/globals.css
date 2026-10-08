@@ -1,21 +1,26 @@
 @import "tailwindcss";
 
 @theme {
-  /* Mondy's Kitchen brand tokens */
-  --color-mondy-red: #c8202e;
-  --color-mondy-red-dark: #9a1b1b;
-  --color-mondy-red-soft: #e85c66;
-  --color-mondy-yellow: #f4c842;
-  --color-mondy-yellow-soft: #f8d661;
-  --color-mondy-yellow-deep: #e8b021;
-  --color-mondy-cream: #fef9ec;
-  --color-mondy-ink: #1a1410;
-  --color-mondy-muted: #8b7e6f;
-  --color-mondy-border: #e8d9b8;
+  /* Rosewood Cafe by Mondy's — colors taken from the printed menu.
+     Token names kept from the original Mondy's Kitchen theme so every
+     screen picks up the new brand without renaming classes:
+       red    → rosewood (headings, buttons, accents)
+       yellow → sand (the menu's "Make it yours" / Passport Special panels) */
+  --color-mondy-red: #8b5e3c;
+  --color-mondy-red-dark: #6e472b;
+  --color-mondy-red-soft: #b0886a;
+  --color-mondy-yellow: #efe5d6;
+  --color-mondy-yellow-soft: #f3ebdf;
+  --color-mondy-yellow-deep: #e3d4bf;
+  --color-mondy-cream: #f7f2e8;
+  --color-mondy-ink: #22201d;
+  --color-mondy-muted: #6e675f;
+  --color-mondy-border: #ddd0bd;
+  --color-mondy-rule: #cdbeaa; /* the thin rules under menu headings */
 
-  /* Fonts (loaded via next/font in layout.tsx) */
-  --font-display: var(--font-fraunces);
-  --font-sans: var(--font-dm-sans);
+  /* Fonts (loaded via next/font in layout.tsx): one bold grotesk like the menu */
+  --font-display: var(--font-archivo);
+  --font-sans: var(--font-archivo);
 
   /* Animation timings */
   --ease-mondy: cubic-bezier(0.32, 0.72, 0, 1);

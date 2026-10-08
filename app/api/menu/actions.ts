@@ -70,6 +70,7 @@ function revalidateMenus() {
   revalidatePath("/order");
   revalidatePath("/menu/daily");
   revalidatePath("/menu/availability");
+  revalidatePath("/menu/prices");
 }
 
 async function managerOnly<T>(fn: () => Promise<T>): Promise<MenuResult> {
@@ -182,4 +183,34 @@ export async function setSoldOutDisplay(channel: "register" | "online", hide: bo
       await prisma.restaurantSettings.create({ data });
     }
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prices: dishes and choice upcharges
+// ─────────────────────────────────────────────────────────────────────────────
+
+const Money = (min: number, max: number) =>
+  z
+    .number()
+    .finite()
+    .min(min)
+    .max(max)
+    .refine((n) => Math.abs(Math.round(n * 100) - n * 100) < 1e-6, "Use dollars and cents");
+
+/** Set a dish's price. $0 means "needs a price" and keeps it off both menus. */
+export async function setItemPrice(itemId: string, price: number): Promise<MenuResult> {
+  const p = z.object({ itemId: Id, price: Money(0, 999.99) }).safeParse({ itemId, price });
+  if (!p.success) return { ok: false, error: "Enter a price between $0.00 and $999.99" };
+  return managerOnly(() =>
+    prisma.menuItem.update({ where: { id: p.data.itemId }, data: { price: p.data.price } }),
+  );
+}
+
+/** Set the extra charge for a choice (e.g. +$0.75 for oat milk). Free = 0. */
+export async function setOptionPrice(modifierId: string, price: number): Promise<MenuResult> {
+  const p = z.object({ modifierId: Id, price: Money(0, 99.99) }).safeParse({ modifierId, price });
+  if (!p.success) return { ok: false, error: "Enter an extra charge between $0.00 and $99.99" };
+  return managerOnly(() =>
+    prisma.modifier.update({ where: { id: p.data.modifierId }, data: { priceAdjustment: p.data.price } }),
+  );
 }

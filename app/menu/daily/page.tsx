@@ -22,6 +22,7 @@ export default async function DailyMenuPage() {
           name: i.name,
           price: i.price,
           soldOut: i.soldOut,
+          needsPrice: i.needsPrice,
           showOnRegister: i.showOnRegister,
           showOnline: i.showOnline,
           serveDays: i.serveDays,

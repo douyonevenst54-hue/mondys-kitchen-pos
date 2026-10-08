@@ -87,7 +87,7 @@ function PayForm({ orderId, total }: { orderId: string; total: number }) {
         {submitting ? "Paying…" : `Pay ${formatMoney(total)}`}
       </button>
       <p className="mt-2 text-center text-xs text-mondy-muted">
-        Card details go straight to Stripe. Mondy&apos;s Kitchen never sees your card number.
+        Card details go straight to Stripe. Rosewood Cafe never sees your card number.
       </p>
     </div>
   );

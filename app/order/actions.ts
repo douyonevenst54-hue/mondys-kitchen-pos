@@ -18,7 +18,7 @@ const OrderSchema = z.object({
       z.object({
         menuItemId: z.string().min(1).max(64),
         quantity: z.number().int().min(1).max(MAX_QTY_PER_LINE),
-        spiceLevel: z.enum(["Mild", "Medium", "Hot"]).nullable().optional(),
+        modifierIds: z.array(z.string().max(64)).max(40).default([]),
       }),
     )
     .min(1, "Your cart is empty")

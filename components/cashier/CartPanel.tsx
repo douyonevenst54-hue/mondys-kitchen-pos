@@ -9,7 +9,6 @@ import {
   Users,
   Utensils,
   Truck,
-  Flame,
   Tag,
   X,
 } from "lucide-react";
@@ -203,11 +202,10 @@ export function CartPanel({ tables, taxRate, staffId, staffRole, onCheckout }: P
                   <p className="font-display text-sm font-semibold text-mondy-ink line-clamp-2">
                     {line.name}
                   </p>
-                  {line.spiceLevel && (
-                    <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-mondy-red/10 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wider text-mondy-red">
-                      <Flame className="h-2.5 w-2.5" fill="currentColor" />
-                      {line.spiceLevel}
-                    </span>
+                  {line.summary && (
+                    <p className="mt-0.5 font-sans text-xs leading-snug text-mondy-red-dark">
+                      {line.summary}
+                    </p>
                   )}
                   <p className="mt-0.5 font-sans text-xs text-mondy-muted tabular">
                     {formatMoney(line.unitPrice)} each

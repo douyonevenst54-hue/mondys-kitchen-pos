@@ -101,7 +101,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
           quantity: l.quantity,
           unitPrice: l.unitPrice,
           nameSnapshot: l.name,
-          spiceLevel: l.spiceLevel ?? null,
+          modifierIds: l.optionIds,
         })),
         discount: state.discount
           ? {

@@ -72,8 +72,9 @@ export function CashierShell({
         />
 
         <div className="flex min-h-0 flex-1">
-          {/* Menu zone */}
-          <div className="flex min-h-0 flex-1 flex-col">
+          {/* Menu zone (min-w-0 lets the category tabs scroll instead of
+              pushing the cart off the screen) */}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <MenuGrid
               categories={categories}
               activeCategoryId={activeCategoryId}

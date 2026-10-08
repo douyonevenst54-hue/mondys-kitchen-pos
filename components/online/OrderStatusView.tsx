@@ -116,7 +116,7 @@ export function OrderStatusView({
               <li key={idx} className="flex justify-between gap-3">
                 <span>
                   {it.quantity} × {it.name}
-                  {it.notes && <span className="block text-mondy-muted">{it.notes.replace("Spice: ", "")}</span>}
+                  {it.notes && <span className="block text-mondy-muted">{it.notes}</span>}
                 </span>
                 <span className="tabular">{formatMoney(it.lineTotal)}</span>
               </li>

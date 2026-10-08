@@ -2,12 +2,15 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 
+// Rosewood Cafe logo, if one is added to /public later. The old
+// mondys-logo.* files are ignored so the old brand doesn't reappear;
+// without a file, screens show the "ROSEWOOD CAFE / by Mondy's" wordmark.
 const CANDIDATE_FILES = [
-  "mondys-logo.png",
-  "mondys-logo.svg",
-  "mondys-logo.jpg",
-  "mondys-logo.jpeg",
-  "mondys-logo.webp",
+  "rosewood-logo.png",
+  "rosewood-logo.svg",
+  "rosewood-logo.jpg",
+  "rosewood-logo.jpeg",
+  "rosewood-logo.webp",
 ];
 
 /**

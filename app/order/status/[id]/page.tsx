@@ -5,7 +5,7 @@ import { getSettings } from "@/lib/menu";
 import { OrderStatusView } from "@/components/online/OrderStatusView";
 
 export const metadata: Metadata = {
-  title: "Your order · Mondy's Kitchen",
+  title: "Your order · Rosewood Cafe by Mondy's",
   robots: { index: false },
 };
 

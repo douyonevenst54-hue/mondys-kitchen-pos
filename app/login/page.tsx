@@ -1,4 +1,4 @@
-import { MondysLogo } from "@/components/login/MondysLogo";
+import { Wordmark } from "@/components/brand/Wordmark";
 import { PinKeypad } from "@/components/login/PinKeypad";
 
 type SearchParams = Promise<{ reason?: string }>;
@@ -6,59 +6,25 @@ type SearchParams = Promise<{ reason?: string }>;
 export default async function LoginPage({ searchParams }: { searchParams: SearchParams }) {
   const { reason } = await searchParams;
   return (
-    <main className="min-h-screen w-full bg-mondy-yellow relative overflow-hidden">
-      {/* Background gradient — mimics the brand asset's left-to-right warming */}
-      <div
-        aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-mondy-yellow-soft via-mondy-yellow to-mondy-yellow-deep"
-      />
-      {/* Soft red corner glow — echoes the brand asset's bottom-right warmth */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute bottom-0 right-0 h-[60vh] w-[60vh] translate-x-1/3 translate-y-1/3 rounded-full bg-mondy-red-dark/40 blur-3xl"
-      />
-      {/* Slim red bottom band — anchors the page like a plate's edge */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 h-1.5 bg-gradient-to-r from-mondy-red-dark/0 via-mondy-red-dark/70 to-mondy-red-dark/0"
-      />
-      {/* Grain texture for warmth (CSS-only noise) */}
-      <div
-        aria-hidden
-        className="absolute inset-0 opacity-[0.08] mix-blend-multiply pointer-events-none"
-        style={{
-          backgroundImage:
-            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E\")",
-        }}
-      />
-
+    <main className="relative min-h-screen w-full overflow-hidden bg-mondy-cream text-mondy-ink">
       <div className="relative z-10 flex min-h-screen flex-col lg:flex-row">
-        {/* Brand side — top on mobile/tablet, left on desktop */}
+        {/* Brand side — set like the printed menu's masthead */}
         <section className="flex flex-1 flex-col items-center justify-center px-8 pt-14 pb-8 lg:pt-24 lg:pb-24">
-          <div className="flex flex-col items-center text-center text-mondy-red animate-rise">
-            <MondysLogo className="text-mondy-red drop-shadow-sm" size={72} />
-            <h1 className="mt-4 font-display text-6xl font-black tracking-tight leading-[0.95] sm:text-7xl">
-              MONDY&apos;S
-            </h1>
-            <h2 className="mt-1 font-sans text-2xl font-semibold tracking-[0.32em] text-mondy-red-dark sm:text-3xl">
-              KITCHEN
-            </h2>
-            <div className="mt-6 flex items-center gap-3">
-              <span className="h-px w-10 bg-mondy-red-dark/40" aria-hidden />
-              <p className="font-display italic text-base font-light tracking-wide text-mondy-ink/80 sm:text-lg">
-                Authentic Haitian Cuisine
-              </p>
-              <span className="h-px w-10 bg-mondy-red-dark/40" aria-hidden />
-            </div>
+          <div className="flex w-full max-w-md flex-col items-center text-center animate-rise">
+            <Wordmark size="xl" />
+            <span aria-hidden className="mt-6 h-px w-full max-w-xs bg-mondy-red" />
+            <p className="mt-4 font-sans text-sm font-semibold text-mondy-red-dark sm:text-base">
+              Breakfast · Bowls · Grill · Coffee · Smoothies
+            </p>
           </div>
         </section>
 
         {/* Keypad side */}
         <section className="flex flex-1 items-start justify-center px-6 pb-12 lg:items-center lg:pb-0">
-          <div className="w-full max-w-sm rounded-3xl bg-white/85 p-6 backdrop-blur-md ring-1 ring-white/60 shadow-2xl animate-rise-delayed sm:p-8">
+          <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl ring-1 ring-mondy-border animate-rise-delayed sm:p-8">
             <header className="mb-5 text-center">
-              <p className="font-sans text-xs font-medium uppercase tracking-[0.24em] text-mondy-red-dark">
-                Staff Sign In
+              <p className="font-sans text-sm font-semibold text-mondy-red-dark">
+                Staff sign in
               </p>
               <p className="mt-1 font-display text-lg text-mondy-ink">
                 Enter your PIN

@@ -21,6 +21,7 @@ type Item = {
   name: string;
   price: number;
   soldOut: boolean;
+  needsPrice: boolean;
   showOnRegister: boolean;
   showOnline: boolean;
   serveDays: number;
@@ -93,7 +94,7 @@ export function DailyMenuBoard({ today, hideSoldOut: initialHide, categories }: 
   const all = categories.flatMap((c) => c.items);
   const listedToday = (i: Item, ch: Channel) => {
     const f = flags[i.id];
-    return f[field(ch)] && servedOn(f.serveDays, today) && !(i.soldOut && hideSoldOut[ch]);
+    return !i.needsPrice && f[field(ch)] && servedOn(f.serveDays, today) && !(i.soldOut && hideSoldOut[ch]);
   };
   const registerCount = all.filter((i) => listedToday(i, "register")).length;
   const onlineCount = all.filter((i) => listedToday(i, "online")).length;
@@ -421,7 +422,9 @@ export function DailyMenuBoard({ today, hideSoldOut: initialHide, categories }: 
                 }
 
                 const offToday = !servedOn(f.serveDays, today);
-                const status = offToday
+                const status = item.needsPrice
+                  ? "Needs a price"
+                  : offToday
                   ? `Not on ${dayName(today)}'s schedule`
                   : item.soldOut
                     ? "Sold out"

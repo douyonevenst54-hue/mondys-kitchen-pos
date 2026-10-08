@@ -1,15 +1,20 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { isListed, isSoldOut, servedOn, weekdayIn } from "@/lib/menu-visibility";
+import { isListed, isSoldOut, needsPrice, servedOn, weekdayIn } from "@/lib/menu-visibility";
+import { optionGroupsInclude, toOptionGroups } from "@/lib/options-db";
+import type { OptionGroup } from "@/lib/options";
 
 export type MenuItemWithModifiers = {
   id: string;
   name: string;
+  description: string | null;
+  menuNumber: number | null;
+  isSignature: boolean;
   price: number;
   isAvailable: boolean;
   portionsLeft: number | null;
   categoryId: string;
-  hasSpiceModifier: boolean;
+  optionGroups: OptionGroup[];
 };
 
 export type CategoryWithItems = {
@@ -25,6 +30,7 @@ export type ManagedMenuItem = MenuItemWithModifiers & {
   serveDays: number;
   servedToday: boolean;
   soldOut: boolean;
+  needsPrice: boolean;
 };
 
 export type ManagedCategory = {
@@ -34,6 +40,23 @@ export type ManagedCategory = {
   items: ManagedMenuItem[];
 };
 
+type LoadedItem = Awaited<ReturnType<typeof loadMenu>>[number]["menuItems"][number];
+
+function baseItem(item: LoadedItem): MenuItemWithModifiers {
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    menuNumber: item.menuNumber,
+    isSignature: item.isSignature,
+    price: Number(item.price),
+    isAvailable: item.isAvailable,
+    portionsLeft: item.portionsLeft,
+    categoryId: item.categoryId,
+    optionGroups: toOptionGroups(item.modifierGroups),
+  };
+}
+
 async function loadMenu() {
   return prisma.category.findMany({
     where: { isActive: true },
@@ -42,11 +65,7 @@ async function loadMenu() {
       menuItems: {
         where: { isActive: true },
         orderBy: { sortOrder: "asc" },
-        include: {
-          modifierGroups: {
-            include: { modifierGroup: { select: { name: true } } },
-          },
-        },
+        include: optionGroupsInclude,
       },
     },
   });
@@ -64,20 +83,14 @@ export async function getMenuForManager(): Promise<ManagedCategory[]> {
     name: c.name,
     sortOrder: c.sortOrder,
     items: c.menuItems.map((item) => ({
-      id: item.id,
-      name: item.name,
-      price: Number(item.price),
+      ...baseItem(item),
       isAvailable: item.isAvailable,
-      portionsLeft: item.portionsLeft,
-      categoryId: item.categoryId,
-      hasSpiceModifier: item.modifierGroups.some(
-        (mg) => mg.modifierGroup.name === "Spice Level",
-      ),
       showOnRegister: item.showOnRegister,
       showOnline: item.showOnline,
       serveDays: item.serveDays,
       servedToday: servedOn(item.serveDays, weekday),
       soldOut: isSoldOut(item),
+      needsPrice: needsPrice(item),
     })),
   }));
 }
@@ -98,17 +111,7 @@ export async function getMenuForCashier(): Promise<CategoryWithItems[]> {
       sortOrder: c.sortOrder,
       items: c.menuItems
         .filter((item) => isListed(item, "register", weekday, settings.hideSoldOutOnRegister))
-        .map((item) => ({
-          id: item.id,
-          name: item.name,
-          price: Number(item.price),
-          isAvailable: !isSoldOut(item),
-          portionsLeft: item.portionsLeft,
-          categoryId: item.categoryId,
-          hasSpiceModifier: item.modifierGroups.some(
-            (mg) => mg.modifierGroup.name === "Spice Level",
-          ),
-        })),
+        .map((item) => ({ ...baseItem(item), isAvailable: !isSoldOut(item) })),
     }))
     .filter((c) => c.items.length > 0);
 }
@@ -129,14 +132,14 @@ export async function getSettings() {
     (settings?.businessHours as Record<string, string | null> | null) ?? null;
 
   return {
-    name: settings?.name ?? "Mondy's Kitchen",
+    name: settings?.name ?? "Rosewood Cafe by Mondy's",
     address: settings?.address ?? null,
     phone: settings?.phone ?? null,
     email: settings?.email ?? null,
     taxRate: settings ? Number(settings.taxRate) : 0.0625,
     currency: settings?.currency ?? "USD",
     receiptFooter:
-      settings?.receiptFooter ?? "Thank you for dining with Mondy's Kitchen!",
+      settings?.receiptFooter ?? "Thank you for visiting Rosewood Cafe by Mondy's!",
     timezone: settings?.timezone ?? "America/New_York",
     defaultDeliveryFee,
     // Online ordering

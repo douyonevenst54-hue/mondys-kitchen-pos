@@ -3,12 +3,13 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { ArrowLeft, Clock, MapPin, Minus, Phone, Plus, ShoppingBag, X } from "lucide-react";
+import { ArrowLeft, Clock, MapPin, Minus, Phone, Plus, ShoppingBag } from "lucide-react";
 import { formatMoney } from "@/lib/money";
+import { selectionKey, type OptionGroup } from "@/lib/options";
 import { submitOnlineOrder } from "@/app/order/actions";
+import { Wordmark } from "@/components/brand/Wordmark";
+import { OptionPicker } from "@/components/menu/OptionPicker";
 import { CardPayment } from "./CardPayment";
-
-type SpiceLevel = "Mild" | "Medium" | "Hot";
 
 type MenuItem = {
   id: string;
@@ -17,7 +18,9 @@ type MenuItem = {
   price: number;
   soldOut: boolean;
   lowStock: number | null;
-  hasSpice: boolean;
+  menuNumber: number | null;
+  isSignature: boolean;
+  optionGroups: OptionGroup[];
 };
 type Category = { id: string; name: string; items: MenuItem[] };
 
@@ -25,9 +28,10 @@ type CartLine = {
   key: string;
   menuItemId: string;
   name: string;
-  price: number;
+  price: number; // base + choices
   quantity: number;
-  spiceLevel: SpiceLevel | null;
+  optionIds: string[];
+  summary: string;
 };
 
 type OpenState = { open: true; closesAt: string } | { open: false; message: string };
@@ -52,7 +56,7 @@ type Step =
   | { name: "checkout" }
   | { name: "pay"; orderId: string; clientSecret: string; total: number };
 
-const SPICE: SpiceLevel[] = ["Mild", "Medium", "Hot"];
+const SPECIAL_CATEGORY = "Passport Special";
 
 export function OnlineOrderApp({
   menu,
@@ -65,24 +69,22 @@ export function OnlineOrderApp({
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [step, setStep] = useState<Step>({ name: "menu" });
-  const [spiceFor, setSpiceFor] = useState<MenuItem | null>(null);
+  const [choosing, setChoosing] = useState<MenuItem | null>(null);
 
   const count = cart.reduce((s, l) => s + l.quantity, 0);
   const subtotal = Math.round(cart.reduce((s, l) => s + l.price * l.quantity, 0) * 100) / 100;
   const tax = Math.round(subtotal * restaurant.taxRate * 100) / 100;
   const total = Math.round((subtotal + tax) * 100) / 100;
+  const hasSignature = menu.some((c) => c.items.some((i) => i.isSignature));
 
-  function add(item: MenuItem, spiceLevel: SpiceLevel | null) {
+  function add(item: MenuItem, optionIds: string[] = [], summary = "", price = item.price) {
     setCart((c) => {
-      const key = `${item.id}:${spiceLevel ?? ""}`;
+      const key = selectionKey(item.id, optionIds);
       const found = c.find((l) => l.key === key);
       if (found) {
         return c.map((l) => (l.key === key ? { ...l, quantity: Math.min(l.quantity + 1, 20) } : l));
       }
-      return [
-        ...c,
-        { key, menuItemId: item.id, name: item.name, price: item.price, quantity: 1, spiceLevel },
-      ];
+      return [...c, { key, menuItemId: item.id, name: item.name, price, quantity: 1, optionIds, summary }];
     });
   }
 
@@ -95,8 +97,8 @@ export function OnlineOrderApp({
   }
 
   function onAddTap(item: MenuItem) {
-    if (item.hasSpice) setSpiceFor(item);
-    else add(item, null);
+    if (item.optionGroups.length > 0) setChoosing(item);
+    else add(item);
   }
 
   const qtyInCart = useMemo(() => {
@@ -107,33 +109,16 @@ export function OnlineOrderApp({
 
   return (
     <div className="min-h-screen bg-mondy-cream text-mondy-ink">
-      {/* Masthead */}
-      <header className="relative overflow-hidden bg-mondy-red text-white">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-mondy-yellow/90"
-        />
-        <div className="relative mx-auto max-w-2xl px-5 pb-7 pt-8">
-          <div className="flex items-center gap-3">
-            {logoUrl && (
-              <Image
-                src={logoUrl}
-                alt=""
-                width={52}
-                height={52}
-                priority
-                className="h-13 w-13 rounded-full bg-white object-contain p-1"
-              />
-            )}
-            <div>
-              <h1 className="font-display text-3xl font-black leading-none sm:text-4xl">
-                {restaurant.name}
-              </h1>
-              <p className="mt-1 text-sm text-white/85">Haitian cooking, ready for pickup</p>
-            </div>
-          </div>
+      {/* Masthead — set like the printed menu */}
+      <header className="px-5 pb-6 pt-10">
+        <div className="mx-auto flex max-w-2xl flex-col items-center text-center">
+          {logoUrl && (
+            <Image src={logoUrl} alt="" width={64} height={64} priority className="mb-4 h-16 w-16 object-contain" />
+          )}
+          <Wordmark size="lg" />
+          <span aria-hidden className="mt-5 h-px w-full bg-mondy-red" />
 
-          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-white/90">
+          <div className="mt-4 flex flex-wrap justify-center gap-x-5 gap-y-1.5 text-sm text-mondy-muted">
             {restaurant.address && (
               <span className="flex items-center gap-1.5">
                 <MapPin className="h-4 w-4" aria-hidden />
@@ -141,7 +126,7 @@ export function OnlineOrderApp({
               </span>
             )}
             {restaurant.phone && (
-              <a href={`tel:${restaurant.phone}`} className="flex items-center gap-1.5 underline-offset-2 hover:underline">
+              <a href={`tel:${restaurant.phone}`} className="flex items-center gap-1.5 underline-offset-2 hover:text-mondy-ink hover:underline">
                 <Phone className="h-4 w-4" aria-hidden />
                 {restaurant.phone}
               </a>
@@ -149,13 +134,13 @@ export function OnlineOrderApp({
           </div>
 
           <p
-            className={`mt-4 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-semibold ${
-              openState.open ? "bg-white text-mondy-ink" : "bg-mondy-ink text-white"
+            className={`mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${
+              openState.open ? "bg-white text-mondy-ink ring-1 ring-mondy-border" : "bg-mondy-ink text-white"
             }`}
           >
             <Clock className="h-4 w-4" aria-hidden />
             {openState.open
-              ? `Ready in about ${restaurant.prepMinutes} min${openState.closesAt ? ` · orders until ${openState.closesAt}` : ""}`
+              ? `Pickup in about ${restaurant.prepMinutes} min${openState.closesAt ? ` · orders until ${openState.closesAt}` : ""}`
               : openState.message}
           </p>
         </div>
@@ -163,16 +148,13 @@ export function OnlineOrderApp({
 
       {step.name === "menu" && (
         <>
-          <nav
-            aria-label="Menu sections"
-            className="sticky top-0 z-20 border-b border-mondy-border bg-mondy-cream/95 backdrop-blur"
-          >
-            <div className="mx-auto flex max-w-2xl gap-2 overflow-x-auto px-5 py-3">
+          <nav aria-label="Menu sections" className="sticky top-0 z-20 border-y border-mondy-border bg-mondy-cream/95 backdrop-blur">
+            <div className="mx-auto flex max-w-2xl gap-1 overflow-x-auto px-4 py-2.5">
               {menu.map((c) => (
                 <a
                   key={c.id}
                   href={`#cat-${c.id}`}
-                  className="shrink-0 rounded-full bg-white px-3.5 py-1.5 text-sm font-medium ring-1 ring-mondy-border hover:bg-mondy-yellow-soft/50"
+                  className="shrink-0 rounded-full px-3.5 py-1.5 text-sm font-semibold text-mondy-ink transition hover:bg-mondy-yellow"
                 >
                   {c.name}
                 </a>
@@ -180,56 +162,101 @@ export function OnlineOrderApp({
             </div>
           </nav>
 
-          <main className="mx-auto max-w-2xl px-5 pb-32 pt-2">
-            {menu.map((c) => (
-              <section key={c.id} id={`cat-${c.id}`} className="scroll-mt-16 pt-6">
-                <h2 className="font-display text-2xl font-black text-mondy-red-dark">{c.name}</h2>
-                <ul className="mt-3 divide-y divide-mondy-border border-y border-mondy-border">
-                  {c.items.map((item) => {
-                    const inCart = qtyInCart.get(item.id) ?? 0;
-                    const atLimit = item.lowStock !== null && inCart >= item.lowStock;
-                    const disabled = !openState.open || item.soldOut || atLimit;
-                    return (
-                      <li key={item.id} className="flex items-start gap-4 py-4">
-                        <div className="min-w-0 flex-1">
-                          <p className={`font-semibold ${item.soldOut ? "text-mondy-muted" : ""}`}>
-                            {item.name}
-                          </p>
-                          {item.description && (
-                            <p className="mt-0.5 text-sm leading-relaxed text-mondy-muted">
-                              {item.description}
+          <main className="mx-auto max-w-2xl px-5 pb-36 pt-4">
+            {menu.length === 0 && (
+              <p className="py-20 text-center text-mondy-muted">The online menu is being updated. Please call us to order.</p>
+            )}
+
+            {menu.map((c) =>
+              c.name === SPECIAL_CATEGORY ? (
+                <section key={c.id} id={`cat-${c.id}`} className="mt-10 scroll-mt-20 rounded-2xl bg-mondy-yellow px-6 py-7 text-center">
+                  <h2 className="font-display text-xl font-black uppercase text-mondy-red">PS: Passport Special</h2>
+                  <p className="mt-1 text-sm font-medium italic">A little taste of somewhere different.</p>
+                  {c.items.map((item) => (
+                    <div key={item.id} className="mt-4">
+                      <p className="mx-auto max-w-md text-sm leading-relaxed text-mondy-muted">
+                        A rotating chef-inspired dish featuring flavors from around the world.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => onAddTap(item)}
+                        disabled={!openState.open || item.soldOut}
+                        className="mt-5 inline-flex items-center gap-2 rounded-full bg-mondy-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden />
+                        {item.soldOut ? "Today's PS is sold out" : `Add today's PS · ${formatMoney(item.price)}`}
+                      </button>
+                    </div>
+                  ))}
+                </section>
+              ) : (
+                <section key={c.id} id={`cat-${c.id}`} className="mt-10 scroll-mt-20">
+                  <h2 className="border-b border-mondy-red pb-2 font-display text-lg font-black uppercase tracking-wide text-mondy-red">
+                    {c.name}
+                  </h2>
+                  <ul className="divide-y divide-mondy-border/70">
+                    {c.items.map((item) => {
+                      const inCart = qtyInCart.get(item.id) ?? 0;
+                      const atLimit = item.lowStock !== null && inCart >= item.lowStock;
+                      const disabled = !openState.open || item.soldOut || atLimit;
+                      return (
+                        <li key={item.id} className="flex items-start gap-4 py-4">
+                          <div className="min-w-0 flex-1">
+                            <p className={`text-[17px] font-bold leading-snug ${item.soldOut ? "text-mondy-muted" : ""}`}>
+                              {item.menuNumber != null && <span className="tabular">{item.menuNumber}. </span>}
+                              {item.isSignature && (
+                                <span className="text-mondy-red" title="Rosewood Signature" aria-label="Rosewood Signature">
+                                  ★{" "}
+                                </span>
+                              )}
+                              {item.name}
                             </p>
-                          )}
-                          <p className="mt-1.5 flex items-center gap-2 text-sm">
-                            <span className="tabular font-semibold">{formatMoney(item.price)}</span>
-                            {item.soldOut && <span className="text-mondy-muted">Sold out today</span>}
-                            {item.lowStock !== null && (
-                              <span className="font-semibold text-mondy-red">
-                                Only {item.lowStock} left
+                            {item.description && (
+                              <p className="mt-0.5 text-sm leading-relaxed text-mondy-muted">{item.description}</p>
+                            )}
+                            {item.optionGroups.length > 0 && (
+                              <p className="mt-1 text-sm italic text-mondy-red-dark">
+                                Choose {item.optionGroups.map((g) => g.name.toLowerCase()).join(", ")}
+                              </p>
+                            )}
+                            <p className="mt-1.5 flex items-center gap-2 text-sm">
+                              <span className="tabular font-semibold">{formatMoney(item.price)}</span>
+                              {item.soldOut && <span className="text-mondy-muted">Sold out today</span>}
+                              {item.lowStock !== null && (
+                                <span className="font-semibold text-mondy-red">Only {item.lowStock} left</span>
+                              )}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onAddTap(item)}
+                            disabled={disabled}
+                            aria-label={`Add ${item.name}`}
+                            className="relative mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mondy-red text-white shadow-sm transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted disabled:shadow-none"
+                          >
+                            <Plus className="h-5 w-5" aria-hidden />
+                            {inCart > 0 && (
+                              <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-mondy-ink px-1 text-[11px] font-bold text-white">
+                                {inCart}
                               </span>
                             )}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => onAddTap(item)}
-                          disabled={disabled}
-                          aria-label={`Add ${item.name}`}
-                          className="relative grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mondy-red text-white shadow-sm transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted disabled:shadow-none"
-                        >
-                          <Plus className="h-5 w-5" aria-hidden />
-                          {inCart > 0 && (
-                            <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-mondy-yellow px-1 text-[11px] font-bold text-mondy-ink">
-                              {inCart}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ))}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ),
+            )}
+
+            <footer className="mt-12 border-t border-mondy-rule pt-5 text-center text-sm text-mondy-muted">
+              {hasSignature && (
+                <p>
+                  <span className="text-mondy-red">★</span> Rosewood Signature
+                </p>
+              )}
+              <p className="mt-1 italic">Please let our team know about any food allergies or dietary concerns when ordering.</p>
+            </footer>
           </main>
 
           {count > 0 && (
@@ -237,7 +264,7 @@ export function OnlineOrderApp({
               <button
                 type="button"
                 onClick={() => setStep({ name: "checkout" })}
-                className="mx-auto flex w-full max-w-2xl items-center justify-between rounded-2xl bg-mondy-ink px-5 py-4 text-white shadow-xl transition hover:bg-black focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-yellow/60"
+                className="mx-auto flex w-full max-w-2xl items-center justify-between rounded-2xl bg-mondy-ink px-5 py-4 text-white shadow-xl transition hover:bg-black focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/40"
               >
                 <span className="flex items-center gap-2 font-semibold">
                   <ShoppingBag className="h-5 w-5" aria-hidden />
@@ -269,7 +296,7 @@ export function OnlineOrderApp({
       )}
 
       {step.name === "pay" && (
-        <main className="mx-auto max-w-2xl px-5 pb-16 pt-6">
+        <main className="mx-auto max-w-2xl px-5 pb-16 pt-2">
           <h2 className="font-display text-2xl font-black">Pay for your order</h2>
           <p className="mt-1 text-sm text-mondy-muted">
             Your order goes to the kitchen as soon as the payment goes through.
@@ -280,55 +307,18 @@ export function OnlineOrderApp({
         </main>
       )}
 
-      {spiceFor && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="spice-title"
-          className="fixed inset-0 z-40 flex items-end justify-center bg-mondy-ink/50 sm:items-center"
-          onClick={() => setSpiceFor(null)}
-        >
-          <div
-            className="w-full max-w-sm rounded-t-3xl bg-white p-6 sm:rounded-3xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p id="spice-title" className="font-display text-xl font-black">
-                  How spicy?
-                </p>
-                <p className="text-sm text-mondy-muted">{spiceFor.name}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSpiceFor(null)}
-                aria-label="Close"
-                className="rounded-full p-1.5 text-mondy-muted hover:bg-mondy-cream"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              {SPICE.map((level, i) => (
-                <button
-                  key={level}
-                  type="button"
-                  autoFocus={i === 1}
-                  onClick={() => {
-                    add(spiceFor, level);
-                    setSpiceFor(null);
-                  }}
-                  className="rounded-2xl bg-mondy-cream px-3 py-4 font-semibold ring-1 ring-mondy-border transition hover:bg-mondy-yellow-soft/60 focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30"
-                >
-                  <span aria-hidden className="block text-lg">
-                    {"🌶️".repeat(i + 1)}
-                  </span>
-                  {level}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+      {choosing && (
+        <OptionPicker
+          name={choosing.name}
+          description={choosing.description}
+          basePrice={choosing.price}
+          groups={choosing.optionGroups}
+          onClose={() => setChoosing(null)}
+          onAdd={(ids, summary, unitPrice) => {
+            add(choosing, ids, summary, unitPrice);
+            setChoosing(null);
+          }}
+        />
       )}
     </div>
   );
@@ -380,7 +370,7 @@ function Checkout({
           lines: cart.map((l) => ({
             menuItemId: l.menuItemId,
             quantity: l.quantity,
-            spiceLevel: l.spiceLevel,
+            modifierIds: l.optionIds,
           })),
           customerName: name,
           customerPhone: phone,
@@ -426,7 +416,7 @@ function Checkout({
               <li key={l.key} className="flex items-center gap-3 py-3.5">
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">{l.name}</p>
-                  {l.spiceLevel && <p className="text-sm text-mondy-muted">{l.spiceLevel}</p>}
+                  {l.summary && <p className="text-sm leading-snug text-mondy-muted">{l.summary}</p>}
                 </div>
                 <div className="flex items-center gap-1">
                   <button

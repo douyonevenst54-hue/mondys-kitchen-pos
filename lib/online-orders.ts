@@ -8,7 +8,9 @@ import { getStripe, toCents } from "@/lib/stripe";
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
 import { onlineOpenState } from "@/lib/online-hours";
-import { isListed, isSoldOut, servedOn, weekdayIn } from "@/lib/menu-visibility";
+import { isListed, isSoldOut, needsPrice, servedOn, weekdayIn } from "@/lib/menu-visibility";
+import { checkSelection, type OptionGroup } from "@/lib/options";
+import { loadOptionGroups, optionGroupsInclude, toOptionGroups } from "@/lib/options-db";
 
 type Tx = Prisma.TransactionClient;
 
@@ -19,7 +21,6 @@ export const MAX_LINES = 30;
 /** Show "only N left" online when a counted dish drops to this or below. */
 export const LOW_STOCK_HINT = 5;
 
-export type SpiceLevel = "Mild" | "Medium" | "Hot";
 
 export class OnlineOrderError extends Error {}
 
@@ -34,7 +35,9 @@ export type OnlineMenuItem = {
   price: number;
   soldOut: boolean;
   lowStock: number | null; // set when only a few portions remain
-  hasSpice: boolean;
+  menuNumber: number | null;
+  isSignature: boolean;
+  optionGroups: OptionGroup[];
 };
 
 export type OnlineMenuCategory = { id: string; name: string; items: OnlineMenuItem[] };
@@ -53,9 +56,7 @@ export async function getOnlineMenu(): Promise<OnlineMenuCategory[]> {
           OR: [{ availableUntil: null }, { availableUntil: { gt: now } }],
         },
         orderBy: { sortOrder: "asc" },
-        include: {
-          modifierGroups: { include: { modifierGroup: { select: { name: true } } } },
-        },
+        include: optionGroupsInclude,
       },
     },
   });
@@ -78,7 +79,9 @@ export async function getOnlineMenu(): Promise<OnlineMenuCategory[]> {
             !soldOut && i.portionsLeft !== null && i.portionsLeft <= LOW_STOCK_HINT
               ? i.portionsLeft
               : null,
-          hasSpice: i.modifierGroups.some((mg) => mg.modifierGroup.name === "Spice Level"),
+          menuNumber: i.menuNumber,
+          isSignature: i.isSignature,
+          optionGroups: toOptionGroups(i.modifierGroups),
         };
       }),
     }))
@@ -105,7 +108,7 @@ export async function getOnlineStatus() {
 export type CartLineInput = {
   menuItemId: string;
   quantity: number;
-  spiceLevel?: SpiceLevel | null;
+  modifierIds: string[];
 };
 
 type PricedLine = {
@@ -115,6 +118,7 @@ type PricedLine = {
   nameSnapshot: string;
   lineTotal: number;
   notes: string | null;
+  modifiers: { create: { modifierId: string; nameSnapshot: string; priceAtTime: number }[] };
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -146,7 +150,7 @@ async function priceCart(lines: CartLineInput[], taxRate: number, timezone: stri
   const weekday = weekdayIn(timezone);
   for (const [id, qty] of wanted) {
     const item = byId.get(id);
-    if (item && (!item.showOnline || !servedOn(item.serveDays, weekday))) {
+    if (item && (!item.showOnline || !servedOn(item.serveDays, weekday) || needsPrice(item))) {
       throw new OnlineOrderError(`${item.name} isn't on today's menu. Remove it to continue.`);
     }
     if (!item || !item.isAvailable || (item.availableUntil && item.availableUntil <= now)) {
@@ -163,16 +167,22 @@ async function priceCart(lines: CartLineInput[], taxRate: number, timezone: stri
     }
   }
 
+  const groupsByItem = await loadOptionGroups(prisma, ids);
   const priced: PricedLine[] = lines.map((l) => {
     const item = byId.get(l.menuItemId)!;
-    const unitPrice = Number(item.price);
+    const sel = checkSelection(groupsByItem.get(item.id) ?? [], l.modifierIds);
+    if (!sel.ok) throw new OnlineOrderError(`${item.name}: ${sel.error}. Update your cart to continue.`);
+    const unitPrice = round2(Number(item.price) + sel.extra);
     return {
       menuItemId: item.id,
       quantity: l.quantity,
       unitPrice,
       nameSnapshot: item.name,
       lineTotal: round2(unitPrice * l.quantity),
-      notes: l.spiceLevel ? `Spice: ${l.spiceLevel}` : null,
+      notes: sel.summary || null,
+      modifiers: {
+        create: sel.chosen.map((o) => ({ modifierId: o.id, nameSnapshot: o.name, priceAtTime: o.price })),
+      },
     };
   });
 
@@ -294,7 +304,7 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
         amount: toCents(total),
         currency: "usd",
         automatic_payment_methods: { enabled: true },
-        description: `Mondy's Kitchen online order ${order.onlineConfirmationCode}`,
+        description: `Rosewood Cafe online order ${order.onlineConfirmationCode}`,
         receipt_email: input.customerEmail ?? undefined,
         metadata: { orderId: order.id, confirmationCode: order.onlineConfirmationCode ?? "" },
       },
