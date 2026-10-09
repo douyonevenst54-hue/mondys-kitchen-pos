@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
+import { isPublicOrderHost } from "@/lib/public-hosts";
 
 const PUBLIC_PATHS = ["/login"];
 
@@ -24,7 +25,24 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  if (CUSTOMER_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+  const isCustomerPath = CUSTOMER_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+
+  // Customer domain (mondyskitchen.com): the home page shows the order page,
+  // and nothing else (login, register, reports) is reachable from it.
+  if (isPublicOrderHost(req.headers.get("host"))) {
+    if (pathname === "/") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/order";
+      return NextResponse.rewrite(url);
+    }
+    if (isCustomerPath) return NextResponse.next();
+    const url = req.nextUrl.clone();
+    url.pathname = "/";
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  if (isCustomerPath) {
     return NextResponse.next();
   }
 

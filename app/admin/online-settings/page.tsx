@@ -28,6 +28,7 @@ export default async function OnlineSettingsPage() {
 
   return (
     <OnlineSettingsForm
+      details={{ phone: settings.phone, address: settings.address, email: settings.email }}
       paused={settings.onlineOrderingPaused}
       businessHours={settings.businessHours}
       prepTimeMinutes={settings.onlinePrepTimeMinutes}

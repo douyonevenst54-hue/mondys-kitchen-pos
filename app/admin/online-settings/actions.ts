@@ -139,3 +139,44 @@ export async function setOnlinePrepTime(minutes: number) {
   revalidatePath("/order");
   return { ok: true as const };
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// Restaurant details: shown on receipts and the online order pages
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DetailsSchema = z.object({
+  phone: z
+    .string()
+    .transform((v) => v.replace(/\D/g, ""))
+    .transform((v) => (v.length === 11 && v.startsWith("1") ? v.slice(1) : v))
+    .refine((v) => v === "" || v.length === 10, "Enter a 10-digit phone number")
+    .transform((v) => (v ? `(${v.slice(0, 3)}) ${v.slice(3, 6)}-${v.slice(6)}` : null)),
+  address: z
+    .string()
+    .trim()
+    .max(160, "Keep the address under 160 characters")
+    .transform((v) => v || null),
+  email: z
+    .union([z.literal(""), z.string().trim().email("Enter a valid email or leave it blank").max(120)])
+    .transform((v) => (v ? v.toLowerCase() : null)),
+});
+
+export async function setRestaurantDetails(input: { phone: string; address: string; email: string }) {
+  try {
+    await requireManagerOrOwner();
+  } catch {
+    return { ok: false as const, error: "Only an owner or manager can change this" };
+  }
+  const parsed = DetailsSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Check the details" };
+  }
+  const existing = await prisma.restaurantSettings.findFirst({ select: { id: true } });
+  if (existing) {
+    await prisma.restaurantSettings.update({ where: { id: existing.id }, data: parsed.data });
+  } else {
+    await prisma.restaurantSettings.create({ data: parsed.data });
+  }
+  revalidatePath("/admin/online-settings");
+  revalidatePath("/order");
+  return { ok: true as const, ...parsed.data };
+}

@@ -9,11 +9,13 @@ import {
   Calendar,
   CheckCircle2,
   AlertCircle,
+  Store,
 } from "lucide-react";
 import {
   setOnlineOrderingPaused,
   setBusinessHours,
   setOnlinePrepTime,
+  setRestaurantDetails,
 } from "@/app/admin/online-settings/actions";
 
 const DAYS = [
@@ -26,13 +28,17 @@ const DAYS = [
   { key: "sunday", label: "Sunday" },
 ] as const;
 
+type Details = { phone: string | null; address: string | null; email: string | null };
+
 type Props = {
+  details: Details;
   paused: boolean;
   businessHours: Record<string, string | null> | null;
   prepTimeMinutes: number;
 };
 
 export function OnlineSettingsForm({
+  details,
   paused: initialPaused,
   businessHours: initialHours,
   prepTimeMinutes: initialPrepTime,
@@ -53,6 +59,7 @@ export function OnlineSettingsForm({
           </h1>
         </header>
 
+        <DetailsSection initial={details} />
         <PauseSection initialPaused={initialPaused} />
         <PrepTimeSection initialPrepTime={initialPrepTime} />
         <HoursSection initialHours={initialHours} />
@@ -65,6 +72,75 @@ export function OnlineSettingsForm({
         </p>
       </div>
     </main>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Restaurant details (receipts + online pages)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DetailsSection({ initial }: { initial: Details }) {
+  const [phone, setPhone] = useState(initial.phone ?? "");
+  const [address, setAddress] = useState(initial.address ?? "");
+  const [email, setEmail] = useState(initial.email ?? "");
+  const [isPending, startTransition] = useTransition();
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  function handleSave() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await setRestaurantDetails({ phone, address, email });
+      if (result.ok) {
+        setPhone(result.phone ?? "");
+        setAddress(result.address ?? "");
+        setEmail(result.email ?? "");
+        setMessage({ type: "success", text: "Saved. Receipts and the online order page now show these details." });
+      } else {
+        setMessage({ type: "error", text: result.error });
+      }
+    });
+  }
+
+  const field =
+    "mt-1 h-11 w-full rounded-lg border border-mondy-border bg-white px-3 font-sans text-base text-mondy-ink placeholder:text-mondy-muted focus:outline-none focus:ring-2 focus:ring-mondy-red/40";
+
+  return (
+    <section className="rounded-2xl bg-white p-5 ring-1 ring-mondy-border">
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl bg-mondy-yellow-soft text-mondy-red-dark">
+          <Store className="h-5 w-5" />
+        </span>
+        <div className="flex-1">
+          <p className="font-display text-lg font-semibold text-mondy-ink">Restaurant details</p>
+          <p className="mt-0.5 font-sans text-xs text-mondy-muted">
+            Printed on every receipt and shown on the online order page, so customers can call or find you.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-3">
+        <label className="block font-sans text-sm font-medium text-mondy-ink">
+          Phone for customers
+          <input className={field} type="tel" inputMode="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(978) 880-2152" />
+        </label>
+        <label className="block font-sans text-sm font-medium text-mondy-ink">
+          Address
+          <input className={field} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, city, MA" maxLength={160} />
+        </label>
+        <label className="block font-sans text-sm font-medium text-mondy-ink">
+          Email <span className="font-normal text-mondy-muted">(optional)</span>
+          <input className={field} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@mondyskitchen.com" />
+        </label>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isPending}
+          className="rounded-xl bg-mondy-red px-4 py-2.5 font-display text-sm font-semibold text-white shadow-sm transition active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-mondy-muted/40"
+        >
+          {isPending ? "Saving…" : "Save details"}
+        </button>
+      </div>
+      {message && <StatusMessage message={message} />}
+    </section>
   );
 }
 

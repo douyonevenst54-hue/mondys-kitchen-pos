@@ -258,6 +258,11 @@ export function ReceiptView({ order, settings, logoUrl }: Props) {
         {/* Footer */}
         <footer className="text-center text-[10px] leading-snug text-gray-700">
           <p>{settings.receiptFooter}</p>
+          {settings.phone && (
+            <p className="mt-1 font-semibold text-gray-900">
+              Questions about your order? Call {settings.phone}
+            </p>
+          )}
           <p className="mt-2 text-[9px] uppercase tracking-widest text-gray-500">
             Order #{order.orderNumber} ·{" "}
             {formatDateTime(order.createdAt, { dateOnly: true })}

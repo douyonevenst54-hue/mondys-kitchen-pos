@@ -22,9 +22,12 @@ const SHARED_KEY = "mondy_last_activity"; // keeps several open tabs in step
 const matches = (path: string, list: string[]) =>
   list.some((p) => path === p || path.startsWith(p + "/"));
 
-export function IdleLogout({ idleMinutes }: { idleMinutes: number }) {
+export function IdleLogout({ idleMinutes, publicHosts = [] }: { idleMinutes: number; publicHosts?: string[] }) {
   const pathname = usePathname() ?? "/";
-  const off = matches(pathname, NO_TIMER);
+  // Customer domain (mondyskitchen.com): no staff are signed in there.
+  const onCustomerDomain =
+    typeof window !== "undefined" && publicHosts.includes(window.location.hostname.toLowerCase());
+  const off = onCustomerDomain || matches(pathname, NO_TIMER);
   const display = matches(pathname, DISPLAY_SCREENS);
 
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);

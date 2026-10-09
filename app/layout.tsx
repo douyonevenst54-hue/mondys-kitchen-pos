@@ -3,6 +3,7 @@ import { Archivo } from "next/font/google";
 import "./globals.css";
 import { IdleLogout } from "@/components/IdleLogout";
 import { IDLE_MINUTES } from "@/lib/session";
+import { PUBLIC_ORDER_HOSTS } from "@/lib/public-hosts";
 
 // Bold grotesk close to the printed menu's Helvetica headings.
 const archivo = Archivo({
@@ -25,7 +26,7 @@ export default function RootLayout({
     <html lang="en" className={archivo.variable}>
       <body>
         {children}
-        <IdleLogout idleMinutes={IDLE_MINUTES} />
+        <IdleLogout idleMinutes={IDLE_MINUTES} publicHosts={PUBLIC_ORDER_HOSTS} />
       </body>
     </html>
   );
