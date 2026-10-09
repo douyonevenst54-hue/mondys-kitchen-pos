@@ -73,6 +73,7 @@ model ModifierGroup {
   isRequired   Boolean  @default(false)
   minSelect    Int      @default(0)   // e.g. 1 for required single-select
   maxSelect    Int      @default(1)   // e.g. 3 for "pick up to 3 toppings"
+  freeChoices  Int      @default(0)   // this many picks are included before charges apply ("2 flavors included")
   sortOrder    Int      @default(0)
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())

@@ -11,6 +11,7 @@ export type OptionGroup = {
   name: string;
   min: number; // 0 = optional
   max: number; // 1 = pick one
+  free: number; // picks included before charges apply (0 = every pick charged at its price)
   options: Option[];
 };
 
@@ -20,6 +21,30 @@ export function groupRule(g: OptionGroup): string {
   if (g.min === 0) return `Optional, up to ${g.max}`;
   if (g.min === g.max) return `Choose ${g.min}`;
   return `Choose ${g.min} to ${g.max}`;
+}
+
+/** "2 included, then +$0.50 each" for groups with included picks. */
+export function freeRule(g: OptionGroup): string | null {
+  if (g.free <= 0) return null;
+  const prices = [...new Set(g.options.map((o) => o.price))];
+  const each = prices.length === 1 && prices[0] > 0 ? `, then +$${prices[0].toFixed(2)} each` : "";
+  return `${g.free} included${each}`;
+}
+
+/**
+ * What each picked option actually costs. In a group with included picks
+ * ("2 flavors included"), the most expensive picks are the free ones, so
+ * the customer always gets the better deal.
+ */
+function chargedPrices(g: OptionGroup, inGroup: Option[]): Map<string, number> {
+  const out = new Map(inGroup.map((o) => [o.id, o.price]));
+  if (g.free > 0) {
+    [...inGroup]
+      .sort((a, b) => b.price - a.price)
+      .slice(0, g.free)
+      .forEach((o) => out.set(o.id, 0));
+  }
+  return out;
 }
 
 export type SelectionResult =
@@ -46,7 +71,8 @@ export function checkSelection(groups: OptionGroup[], selectedIds: string[]): Se
       return { ok: false, error: `${g.name}: choose ${g.min === 1 ? "one" : g.min}` };
     }
     if (inGroup.length > g.max) return { ok: false, error: `${g.name}: choose at most ${g.max}` };
-    for (const o of inGroup) chosen.push({ ...o, groupId: g.id, groupName: g.name });
+    const charged = chargedPrices(g, inGroup);
+    for (const o of inGroup) chosen.push({ ...o, price: charged.get(o.id) ?? o.price, groupId: g.id, groupName: g.name });
     if (inGroup.length) {
       const names = inGroup.map((o) => o.name).join(", ");
       // One required pick ("Iced", "Penne") reads fine alone; optional or
@@ -56,6 +82,11 @@ export function checkSelection(groups: OptionGroup[], selectedIds: string[]): Se
   }
   const extra = Math.round(chosen.reduce((s, o) => s + o.price, 0) * 100) / 100;
   return { ok: true, chosen, extra, summary: parts.join(" · ") };
+}
+
+/** True when a required choice (size, hot/iced…) can raise the price: show "from $X". */
+export function priceStartsFrom(groups: OptionGroup[]): boolean {
+  return groups.some((g) => g.min > 0 && g.options.some((o) => o.price > 0));
 }
 
 /** Same dish + same choices = same cart line. */

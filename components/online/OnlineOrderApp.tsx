@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { ArrowLeft, Clock, MapPin, Minus, Phone, Plus, ShoppingBag } from "lucide-react";
 import { formatMoney } from "@/lib/money";
-import { selectionKey, type OptionGroup } from "@/lib/options";
+import { priceStartsFrom, selectionKey, type OptionGroup } from "@/lib/options";
 import { submitOnlineOrder } from "@/app/order/actions";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { OptionPicker } from "@/components/menu/OptionPicker";
@@ -220,7 +220,10 @@ export function OnlineOrderApp({
                               </p>
                             )}
                             <p className="mt-1.5 flex items-center gap-2 text-sm">
-                              <span className="tabular font-semibold">{formatMoney(item.price)}</span>
+                              <span className="tabular font-semibold">
+                                {priceStartsFrom(item.optionGroups) && <span className="font-normal text-mondy-muted">from </span>}
+                                {formatMoney(item.price)}
+                              </span>
                               {item.soldOut && <span className="text-mondy-muted">Sold out today</span>}
                               {item.lowStock !== null && (
                                 <span className="font-semibold text-mondy-red">Only {item.lowStock} left</span>

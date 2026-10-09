@@ -6,6 +6,7 @@ import { useCart } from "./CartContext";
 import { formatMoney } from "@/lib/money";
 import { SlidersHorizontal } from "lucide-react";
 import { OptionPicker } from "@/components/menu/OptionPicker";
+import { priceStartsFrom } from "@/lib/options";
 
 type Props = {
   categories: CategoryWithItems[];
@@ -169,6 +170,7 @@ function MenuTile({
             soldOut ? "text-mondy-muted" : "text-mondy-red"
           }`}
         >
+          {priceStartsFrom(item.optionGroups) && <span className="mr-1 text-xs font-medium">from</span>}
           {formatMoney(item.price)}
         </span>
         {!soldOut && item.portionsLeft != null && (

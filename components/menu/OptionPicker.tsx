@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, X } from "lucide-react";
 import { formatMoney } from "@/lib/money";
-import { checkSelection, groupRule, type OptionGroup } from "@/lib/options";
+import { checkSelection, freeRule, groupRule, type OptionGroup } from "@/lib/options";
 
 type Props = {
   name: string;
@@ -31,7 +31,10 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
 
   const ids = useMemo(() => Object.values(picked).flat(), [picked]);
   const result = useMemo(() => checkSelection(groups, ids), [groups, ids]);
-  const price = Math.round((basePrice + (result.ok ? result.extra : sumPicked(groups, ids))) * 100) / 100;
+  // Running price even before required picks are made (same math as checkout).
+  const partial = useMemo(() => checkSelection(groups.map((g) => ({ ...g, min: 0 })), ids), [groups, ids]);
+  const extra = result.ok ? result.extra : partial.ok ? partial.extra : 0;
+  const price = Math.round((basePrice + extra) * 100) / 100;
   const firstMissing = groups.find((g) => (picked[g.id]?.length ?? 0) < g.min);
 
   function toggle(g: OptionGroup, optionId: string) {
@@ -118,6 +121,7 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
                     {groupRule(g)}
                   </span>
                 </div>
+                {freeRule(g) && <p className="mt-0.5 text-sm text-mondy-muted">{freeRule(g)}</p>}
                 <div role={g.max === 1 ? "radiogroup" : "group"} aria-labelledby={`grp-${g.id}`} className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {g.options.map((o) => {
                     const on = cur.includes(o.id);
@@ -143,7 +147,7 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
                           {on && <Check className="h-3.5 w-3.5" />}
                         </span>
                         <span className="min-w-0 flex-1">{o.name}</span>
-                        {o.price !== 0 && (
+                        {o.price !== 0 && g.free === 0 && (
                           <span className="shrink-0 text-sm tabular text-mondy-muted">
                             {o.price > 0 ? "+" : "−"}
                             {formatMoney(Math.abs(o.price))}
@@ -178,9 +182,4 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
       </div>
     </div>
   );
-}
-
-function sumPicked(groups: OptionGroup[], ids: string[]): number {
-  const set = new Set(ids);
-  return groups.flatMap((g) => g.options).reduce((s, o) => (set.has(o.id) ? s + o.price : s), 0);
 }

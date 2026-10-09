@@ -8,9 +8,9 @@ import { setItemPrice, setOptionPrice } from "@/app/api/menu/actions";
 type Dish = { id: string; name: string; number: number | null; price: number; hidden: boolean };
 type Category = { id: string; name: string; items: Dish[] };
 type Choice = { id: string; name: string; price: number };
-type Group = { id: string; name: string; usedBy: string[]; options: Choice[] };
+type Group = { id: string; name: string; usedBy: string[]; free: number; options: Choice[] };
 
-type Filter = "needs" | "menu" | "hidden";
+type Filter = "all" | "needs" | "hidden";
 
 export function PriceEditor({ categories, groups }: { categories: Category[]; groups: Group[] }) {
   const [prices, setPrices] = useState<Record<string, number>>(() =>
@@ -19,8 +19,12 @@ export function PriceEditor({ categories, groups }: { categories: Category[]; gr
   const all = categories.flatMap((c) => c.items);
   const needsCount = all.filter((i) => !i.hidden && !(prices[i.id] > 0)).length;
 
+  // Dishes that needed a price when the page opened stay in that list after
+  // you price them (with a ✓), so they don't vanish while you work.
+  const [neededAtOpen] = useState(() => new Set(all.filter((i) => !(i.price > 0)).map((i) => i.id)));
+
   const [tab, setTab] = useState<"dishes" | "choices">("dishes");
-  const [filter, setFilter] = useState<Filter>(needsCount > 0 ? "needs" : "menu");
+  const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
 
   const visible = useMemo(() => {
@@ -32,11 +36,11 @@ export function PriceEditor({ categories, groups }: { categories: Category[]; gr
           if (q && !i.name.toLowerCase().includes(q)) return false;
           if (filter === "hidden") return i.hidden;
           if (i.hidden) return false;
-          return filter === "needs" ? !(prices[i.id] > 0) : true;
+          return filter === "needs" ? neededAtOpen.has(i.id) || !(prices[i.id] > 0) : true;
         }),
       }))
       .filter((c) => c.items.length > 0);
-  }, [categories, filter, query, prices]);
+  }, [categories, filter, query, prices, neededAtOpen]);
 
   const visibleGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -75,9 +79,9 @@ export function PriceEditor({ categories, groups }: { categories: Category[]; gr
           <div>
             <h1 className="font-display text-2xl font-black">Prices</h1>
             <p className="mt-0.5 text-sm text-mondy-muted" aria-live="polite">
-              {needsCount > 0
-                ? `${needsCount} ${needsCount === 1 ? "dish needs" : "dishes need"} a price. They stay off the register and online menu until priced.`
-                : "Every dish on the menu has a price."}
+              Tap any price to change it, then press Enter or tap away to save. The register and online menu update right away.
+              {needsCount > 0 &&
+                ` ${needsCount} ${needsCount === 1 ? "dish needs" : "dishes need"} a price and ${needsCount === 1 ? "stays" : "stay"} off both menus until priced.`}
             </p>
           </div>
 
@@ -119,8 +123,8 @@ export function PriceEditor({ categories, groups }: { categories: Category[]; gr
               <div role="group" aria-label="Show" className="flex rounded-xl bg-mondy-cream p-1 ring-1 ring-mondy-border">
                 {(
                   [
+                    ["all", "All dishes"],
                     ["needs", `Needs a price (${needsCount})`],
-                    ["menu", "On the menu"],
                     ["hidden", "Hidden"],
                   ] as const
                 ).map(([value, label]) => (
@@ -179,7 +183,10 @@ export function PriceEditor({ categories, groups }: { categories: Category[]; gr
             {visibleGroups.map((g) => (
               <section key={g.id} className="mt-6">
                 <h2 className="font-display text-base font-black">{g.name}</h2>
-                <p className="mb-2 text-xs text-mondy-muted">Used by {g.usedBy.join(", ")}</p>
+                <p className="mb-2 text-xs text-mondy-muted">
+                  {g.free > 0 && <span className="font-semibold text-mondy-ink">{g.free} included free, then each is charged. </span>}
+                  Used by {g.usedBy.join(", ")}
+                </p>
                 <ul className="divide-y divide-mondy-border overflow-hidden rounded-xl bg-white ring-1 ring-mondy-border">
                   {g.options.map((o) => (
                     <PriceRow

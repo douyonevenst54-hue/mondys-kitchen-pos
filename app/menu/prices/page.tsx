@@ -48,6 +48,7 @@ export default async function PricesPage() {
         id: g.id,
         name: g.name,
         usedBy: g.menuItems.map((m) => m.menuItem.name),
+        free: g.freeChoices,
         options: g.modifiers.map((m) => ({ id: m.id, name: m.name, price: Number(m.priceAdjustment) })),
       }))}
     />

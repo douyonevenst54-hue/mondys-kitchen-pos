@@ -3,10 +3,13 @@
  *
  *   Preview (changes nothing):  npx tsx scripts/load-rosewood-menu.ts
  *   Save to the database:       npx tsx scripts/load-rosewood-menu.ts --apply
+ *   Also reset every price to the file:  add --set-prices
  *
  * Safe to run again after editing scripts/rosewood-menu-data.ts:
  *  - adds new dishes and choices, updates names/descriptions/numbers
- *  - never touches prices you set in the POS
+ *  - fills in prices only for dishes that have none yet, unless you add
+ *    --set-prices (then every dish and choice price matches the file; the
+ *    preview lists each change first)
  *  - never re-hides or re-shows dishes a manager changed in Daily menu
  *
  * The FIRST run also hides every old dish on the register and online menu.
@@ -16,9 +19,12 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { GROUPS, MENU, RECEIPT_FOOTER, RESTAURANT_NAME } from "./rosewood-menu-data";
+import { GROUPS, MENU, RECEIPT_FOOTER, RESTAURANT_NAME, type OptionDef } from "./rosewood-menu-data";
 
 const apply = process.argv.includes("--apply");
+const setPrices = process.argv.includes("--set-prices");
+const opt = (o: OptionDef) => (typeof o === "string" ? { name: o, price: 0 } : o);
+const money = (n: number) => `$${n.toFixed(2)}`;
 const forceHideOld = process.argv.includes("--hide-old");
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
@@ -28,6 +34,9 @@ function check() {
   for (const g of GROUPS) {
     if (g.min < 0 || g.max < 1 || g.min > g.max || g.max > g.options.length) {
       throw new Error(`Group ${g.key}: min/max don't fit its ${g.options.length} options`);
+    }
+    for (const o of g.options.map(opt)) {
+      if (!(o.price >= 0 && o.price < 100)) throw new Error(`Group ${g.key}: bad price for ${o.name}`);
     }
   }
   for (const c of MENU) {
@@ -71,12 +80,47 @@ async function main() {
     ? allItems.filter((i) => i.isActive && !rosewoodIds.has(i.id) && (i.showOnRegister || i.showOnline))
     : [];
 
+  // ── Price changes this run would make ─────────────────────────────────────
+  const priceChanges: string[] = [];
+  const currentPrice = new Map(
+    (await prisma.menuItem.findMany({ select: { id: true, price: true } })).map((r) => [r.id, Number(r.price)]),
+  );
+  for (const c of MENU) {
+    const cat = catByName.get(c.name);
+    for (const i of c.items) {
+      if (i.price == null) continue;
+      const found = cat ? itemByKey.get(itemKey(cat.id, i.name)) : undefined;
+      const now = found ? (currentPrice.get(found.id) ?? 0) : 0;
+      if (Math.abs(now - i.price) < 0.005) continue;
+      if (now > 0 && !setPrices) continue; // keep POS prices unless --set-prices
+      priceChanges.push(`${i.name}: ${now > 0 ? money(now) : "no price"} → ${money(i.price)}`);
+    }
+  }
+  const optionChanges: string[] = [];
+  for (const g of GROUPS) {
+    const group = await prisma.modifierGroup.findUnique({
+      where: { key: g.key },
+      include: { modifiers: { select: { name: true, priceAdjustment: true } } },
+    });
+    for (const o of g.options.map(opt)) {
+      const m = group?.modifiers.find((x) => x.name.toLowerCase() === o.name.toLowerCase());
+      const now = m ? Number(m.priceAdjustment) : null;
+      if (now !== null && (Math.abs(now - o.price) < 0.005 || !setPrices)) continue;
+      if (now === null && o.price === 0) continue;
+      optionChanges.push(`${g.name} › ${o.name}: ${now === null ? "new" : now ? "+" + money(now) : "free"} → ${o.price ? "+" + money(o.price) : "free"}`);
+    }
+  }
+
   console.log(apply ? "\nSAVING the Rosewood menu:\n" : "\nPREVIEW (nothing saved yet):\n");
   console.log(`  Categories: ${MENU.length} (${newCatNames.length} new${newCatNames.length ? ": " + newCatNames.join(", ") : ""})`);
-  console.log(`  Dishes:     ${createCount} to add, ${updateCount} already there (kept with their prices)`);
-  console.log(`  Choices:    ${GROUPS.length} option groups, ${GROUPS.reduce((n, g) => n + g.options.length, 0)} options (all free; set upcharges in Prices)`);
+  console.log(`  Dishes:     ${createCount} to add, ${updateCount} already there`);
+  console.log(`  Options:    ${GROUPS.length} option groups, ${GROUPS.reduce((n, g) => n + g.options.length, 0)} options`);
   console.log(`  Old menu:   ${hideOld ? `${toHide.length} old dishes will be hidden (not deleted)` : "left as is"}`);
   console.log(`  Name:       restaurant name becomes "${RESTAURANT_NAME}"`);
+  console.log(`  Prices:     ${priceChanges.length} dish price${priceChanges.length === 1 ? "" : "s"} to set${setPrices ? "" : " (dishes with no price only; add --set-prices to match the file exactly)"}`);
+  for (const line of priceChanges) console.log(`              ${line}`);
+  console.log(`  Choices:    ${optionChanges.length} choice charge${optionChanges.length === 1 ? "" : "s"} to set`);
+  for (const line of optionChanges) console.log(`              ${line}`);
 
   if (!apply) {
     console.log("\nLooks right? Run again with --apply to save.");
@@ -88,19 +132,35 @@ async function main() {
   for (const [gi, g] of GROUPS.entries()) {
     const group = await prisma.modifierGroup.upsert({
       where: { key: g.key },
-      update: { name: g.name, minSelect: g.min, maxSelect: g.max, isRequired: g.min > 0, isActive: true },
-      create: { key: g.key, name: g.name, minSelect: g.min, maxSelect: g.max, isRequired: g.min > 0, sortOrder: gi },
+      update: { name: g.name, minSelect: g.min, maxSelect: g.max, freeChoices: g.free ?? 0, isRequired: g.min > 0, isActive: true },
+      create: {
+        key: g.key,
+        name: g.name,
+        minSelect: g.min,
+        maxSelect: g.max,
+        freeChoices: g.free ?? 0,
+        isRequired: g.min > 0,
+        sortOrder: gi,
+      },
     });
     groupId.set(g.key, group.id);
     const existing = await prisma.modifier.findMany({ where: { modifierGroupId: group.id }, select: { id: true, name: true } });
-    for (const [oi, name] of g.options.entries()) {
-      const found = existing.find((m) => m.name.toLowerCase() === name.toLowerCase());
+    const listed = g.options.map(opt);
+    for (const [oi, o] of listed.entries()) {
+      const found = existing.find((m) => m.name.toLowerCase() === o.name.toLowerCase());
       if (found) {
-        await prisma.modifier.update({ where: { id: found.id }, data: { name, sortOrder: oi, isActive: true } });
+        await prisma.modifier.update({
+          where: { id: found.id },
+          data: { name: o.name, sortOrder: oi, isActive: true, ...(setPrices ? { priceAdjustment: o.price } : {}) },
+        });
       } else {
-        await prisma.modifier.create({ data: { modifierGroupId: group.id, name, sortOrder: oi, priceAdjustment: 0 } });
+        await prisma.modifier.create({ data: { modifierGroupId: group.id, name: o.name, sortOrder: oi, priceAdjustment: o.price } });
       }
     }
+    // Choices taken off the menu file (e.g. coconut milk for coffee) stop showing.
+    const keep = new Set(listed.map((o) => o.name.toLowerCase()));
+    const dropped = existing.filter((m) => !keep.has(m.name.toLowerCase())).map((m) => m.id);
+    if (dropped.length) await prisma.modifier.updateMany({ where: { id: { in: dropped } }, data: { isActive: false } });
   }
 
   // ── Categories ────────────────────────────────────────────────────────────
@@ -131,14 +191,23 @@ async function main() {
         sortOrder: ii,
         isActive: true,
       };
+      const now = found ? (currentPrice.get(found.id) ?? 0) : 0;
+      const priceUpdate = i.price != null && (setPrices || !(now > 0)) ? { price: i.price } : {};
       const item = found
         ? await prisma.menuItem.update({
             where: { id: found.id },
-            data: hideOld ? { ...details, showOnRegister: true, showOnline: true } : details,
+            data: { ...details, ...priceUpdate, ...(hideOld ? { showOnRegister: true, showOnline: true } : {}) },
           })
         : await prisma.menuItem.create({
-            // Price 0 = "needs a price": stays off the register and online until set in Prices.
-            data: { ...details, categoryId: cat.id, price: 0, isAvailable: true, showOnRegister: true, showOnline: true },
+            // No price in the file = "needs a price": stays off both menus until set in Prices.
+            data: {
+              ...details,
+              categoryId: cat.id,
+              price: i.price ?? 0,
+              isAvailable: true,
+              showOnRegister: true,
+              showOnline: true,
+            },
           });
 
       // Link this dish's choices, in order; drop links no longer listed.

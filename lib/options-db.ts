@@ -21,6 +21,7 @@ type LinkRow = {
     isActive: boolean;
     minSelect: number;
     maxSelect: number;
+    freeChoices: number;
     modifiers: { id: string; name: string; priceAdjustment: Prisma.Decimal | number }[];
   };
 };
@@ -37,6 +38,7 @@ export function toOptionGroups(links: LinkRow[]): OptionGroup[] {
         // Never require more picks than there are options left (one may be switched off).
         min: Math.min(g.minSelect, options.length),
         max: Math.max(1, Math.min(g.maxSelect, options.length)),
+        free: Math.max(0, g.freeChoices),
         options,
       };
     });
