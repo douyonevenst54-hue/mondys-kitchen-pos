@@ -35,6 +35,7 @@ type Props = {
   paused: boolean;
   businessHours: Record<string, string | null> | null;
   prepTimeMinutes: number;
+  card: CardInfo;
 };
 
 export function OnlineSettingsForm({
@@ -42,6 +43,7 @@ export function OnlineSettingsForm({
   paused: initialPaused,
   businessHours: initialHours,
   prepTimeMinutes: initialPrepTime,
+  card,
 }: Props) {
   return (
     <main className="min-h-screen bg-mondy-cream py-6">
@@ -59,6 +61,7 @@ export function OnlineSettingsForm({
           </h1>
         </header>
 
+        <CardStatusLine card={card} />
         <DetailsSection initial={details} />
         <PauseSection initialPaused={initialPaused} />
         <PrepTimeSection initialPrepTime={initialPrepTime} />
@@ -72,6 +75,38 @@ export function OnlineSettingsForm({
         </p>
       </div>
     </main>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Card payments: on/off at a glance
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CardInfo = { enabled: boolean; mode: "test" | "live" | null; problem: string | null; webhook: boolean };
+
+function CardStatusLine({ card }: { card: CardInfo }) {
+  const ok = card.enabled && card.webhook;
+  return (
+    <section
+      aria-label="Card payments"
+      className={`rounded-2xl px-5 py-4 font-sans ring-1 ${ok ? "bg-white ring-mondy-border" : "bg-mondy-yellow ring-mondy-red/40"}`}
+    >
+      <p className="flex items-center gap-2 text-sm font-semibold text-mondy-ink">
+        <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${card.enabled ? "bg-green-600" : "bg-mondy-red"}`} />
+        {card.enabled
+          ? `Card payments: on${card.mode === "test" ? " (test mode, no real charges)" : " (live)"}`
+          : "Card payments: off. Customers only see Pay at pickup"}
+      </p>
+      {!card.enabled && card.problem && <p className="mt-1 text-xs text-mondy-ink">Reason: {card.problem}.</p>}
+      {card.enabled && !card.webhook && (
+        <p className="mt-1 text-xs text-mondy-ink">
+          STRIPE_WEBHOOK_SECRET is missing, so paid orders may not reach the kitchen. Add it in Vercel and redeploy.
+        </p>
+      )}
+      {!card.enabled && (
+        <p className="mt-1 text-xs text-mondy-muted">Fix it in Vercel → Settings → Environment Variables (Production), then redeploy.</p>
+      )}
+    </section>
   );
 }
 

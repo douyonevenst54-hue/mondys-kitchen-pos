@@ -48,6 +48,7 @@ type Props = {
   openState: OpenState;
   payAtPickupLimit: number;
   cardEnabled: boolean;
+  stripeKey: string | null;
   logoUrl: string | null;
 };
 
@@ -64,6 +65,7 @@ export function OnlineOrderApp({
   openState,
   payAtPickupLimit,
   cardEnabled,
+  stripeKey,
   logoUrl,
 }: Props) {
   const router = useRouter();
@@ -305,7 +307,7 @@ export function OnlineOrderApp({
             Your order goes to the kitchen as soon as the payment goes through.
           </p>
           <div className="mt-5 rounded-2xl bg-white p-5 ring-1 ring-mondy-border">
-            <CardPayment clientSecret={step.clientSecret} orderId={step.orderId} total={step.total} />
+            <CardPayment stripeKey={stripeKey ?? ""} clientSecret={step.clientSecret} orderId={step.orderId} total={step.total} />
           </div>
         </main>
       )}

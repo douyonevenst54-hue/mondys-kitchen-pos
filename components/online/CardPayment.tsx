@@ -7,25 +7,29 @@ import { Lock } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 
 let stripePromise: Promise<Stripe | null> | null = null;
-function getStripePromise() {
-  if (!stripePromise) {
-    stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "");
+let loadedKey = "";
+function getStripePromise(key: string) {
+  if (!stripePromise || loadedKey !== key) {
+    loadedKey = key;
+    stripePromise = loadStripe(key);
   }
   return stripePromise;
 }
 
 export function CardPayment({
+  stripeKey,
   clientSecret,
   orderId,
   total,
 }: {
+  stripeKey: string;
   clientSecret: string;
   orderId: string;
   total: number;
 }) {
   return (
     <Elements
-      stripe={getStripePromise()}
+      stripe={getStripePromise(stripeKey)}
       options={{
         clientSecret,
         appearance: {
