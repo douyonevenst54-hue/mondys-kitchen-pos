@@ -319,7 +319,8 @@ model Payment {
   changeGiven     Decimal?      @db.Decimal(10, 2) // CASH only
   cardLast4       String?                            // CARD only
   cardBrand       String?                            // "Visa", "Mastercard"
-  processorRef    String?                            // Epos Now transaction id
+  processorRef    String?                            // Stripe PaymentIntent id for card-reader payments
+  // (older rows: Epos Now transaction id)
   processedAt     DateTime      @default(now())
   refundedAt      DateTime?
   refundReason    String?
@@ -422,6 +423,10 @@ model RestaurantSettings {
   onlinePrepTimeMinutes   Int      @default(20)
   hideSoldOutOnRegister   Boolean  @default(false) // false = show greyed out with "Sold out"
   hideSoldOutOnline       Boolean  @default(false) // false = show as "Sold out today"
+  // Stripe card reader on the counter (WisePOS E / S700), paired from Card reader settings
+  cardReaderId            String?  // tmr_… in Stripe
+  cardReaderLabel         String?  // "Front counter"
+  terminalLocationId      String?  // tml_… Stripe Terminal location for the restaurant
   updatedAt           DateTime @updatedAt
 }
 

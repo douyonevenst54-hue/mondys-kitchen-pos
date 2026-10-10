@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import { finalizeCardPayment } from "@/lib/online-orders";
+import { PI_SOURCE, finalizeReaderPayment } from "@/lib/terminal";
 import { revalidatePath } from "next/cache";
 
 /**
@@ -26,7 +27,9 @@ export async function POST(req: Request) {
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
     try {
-      await finalizeCardPayment(pi.id);
+      // Card reader at the counter, or card paid on the website.
+      if (pi.metadata?.source === PI_SOURCE) await finalizeReaderPayment(pi.id);
+      else await finalizeCardPayment(pi.id);
       revalidatePath("/online");
       revalidatePath("/");
     } catch (e) {

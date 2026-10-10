@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowLeft, Bell, BellOff, Phone, Settings2 } from "lucide-react";
+import { ArrowLeft, Bell, BellOff, CreditCard, Phone, Settings2 } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import { fetchOnlineQueue, pickUpOnlineOrder, readyOnlineOrder } from "@/app/online/actions";
 import type { QueueOrder } from "@/lib/online-orders";
+import { ReaderPayment } from "./ReaderPayment";
 
 function chime() {
   try {
@@ -32,12 +33,14 @@ export function OnlineQueue({
   acceptingOrders,
   closedMessage,
   canManage,
+  reader,
 }: {
   initial: QueueOrder[];
   timezone: string;
   acceptingOrders: boolean;
   closedMessage: string | null;
   canManage: boolean;
+  reader: { paired: boolean; simulated: boolean };
 }) {
   const [orders, setOrders] = useState(initial);
   const [soundOn, setSoundOn] = useState(false);
@@ -125,6 +128,15 @@ export function OnlineQueue({
                 Hours &amp; pause
               </Link>
             )}
+            {canManage && (
+              <Link
+                href="/admin/card-reader"
+                className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-sans text-xs font-medium text-mondy-ink ring-1 ring-mondy-border transition hover:bg-mondy-cream"
+              >
+                <CreditCard className="h-3.5 w-3.5" aria-hidden />
+                Card reader
+              </Link>
+            )}
           </div>
         </div>
         {!acceptingOrders && (
@@ -137,12 +149,12 @@ export function OnlineQueue({
       <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-2">
         <Column title="To make" count={toMake.length} empty="No orders waiting.">
           {toMake.map((o) => (
-            <OrderCard key={o.id} order={o} isNew={newIds.has(o.id)} time={time} onUpdated={replace} />
+            <OrderCard key={o.id} order={o} isNew={newIds.has(o.id)} time={time} onUpdated={replace} reader={reader} />
           ))}
         </Column>
         <Column title="Ready for pickup" count={ready.length} empty="Nothing waiting on the shelf.">
           {ready.map((o) => (
-            <OrderCard key={o.id} order={o} isNew={false} time={time} onUpdated={replace} />
+            <OrderCard key={o.id} order={o} isNew={false} time={time} onUpdated={replace} reader={reader} />
           ))}
         </Column>
       </div>
@@ -204,15 +216,18 @@ function OrderCard({
   isNew,
   time,
   onUpdated,
+  reader,
 }: {
   order: QueueOrder;
   isNew: boolean;
   time: (d: Date | string) => string;
   onUpdated: (o: QueueOrder) => void;
+  reader: { paired: boolean; simulated: boolean };
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [choosingPayment, setChoosingPayment] = useState(false);
+  const [charging, setCharging] = useState(false);
 
   function markReady() {
     setError(null);
@@ -265,7 +280,7 @@ function OrderCard({
               order.paid ? "bg-mondy-cream text-mondy-ink" : "bg-mondy-red text-white"
             }`}
           >
-            {order.paid ? "Paid online" : `Collect ${formatMoney(order.total)}`}
+            {order.paid ? "Paid" : `Collect ${formatMoney(order.total)}`}
           </p>
         </div>
       </div>
@@ -307,24 +322,54 @@ function OrderCard({
           </button>
         )}
         {order.status === "READY" && choosingPayment && (
-          <>
-            <button type="button" onClick={() => pickUp("CASH")} disabled={pending} className={`${btn} bg-mondy-ink text-white hover:bg-black`}>
-              Paid cash
-            </button>
-            <button type="button" onClick={() => pickUp("CARD_PRESENT")} disabled={pending} className={`${btn} bg-mondy-ink text-white hover:bg-black`}>
-              Paid card
-            </button>
-            <button
-              type="button"
-              onClick={() => setChoosingPayment(false)}
-              disabled={pending}
-              className={`${btn} flex-none bg-white text-mondy-ink ring-1 ring-mondy-border hover:bg-mondy-cream`}
-            >
-              Back
-            </button>
-          </>
+          <div className="flex w-full flex-col gap-2">
+            {reader.paired && (
+              <button
+                type="button"
+                onClick={() => setCharging(true)}
+                disabled={pending}
+                className={`${btn} flex items-center justify-center gap-2 bg-mondy-red text-white hover:bg-mondy-red-dark`}
+              >
+                <CreditCard className="h-4 w-4" aria-hidden />
+                Charge {formatMoney(order.total)} on card reader
+              </button>
+            )}
+            <div className="flex gap-2">
+              <button type="button" onClick={() => pickUp("CASH")} disabled={pending} className={`${btn} bg-mondy-ink text-white hover:bg-black`}>
+                Paid cash
+              </button>
+              <button
+                type="button"
+                onClick={() => pickUp("CARD_PRESENT")}
+                disabled={pending}
+                className={`${btn} ${reader.paired ? "bg-white text-mondy-ink ring-1 ring-mondy-border hover:bg-mondy-cream" : "bg-mondy-ink text-white hover:bg-black"}`}
+              >
+                {reader.paired ? "Card, other machine" : "Paid card"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setChoosingPayment(false)}
+                disabled={pending}
+                className={`${btn} flex-none bg-white text-mondy-ink ring-1 ring-mondy-border hover:bg-mondy-cream`}
+              >
+                Back
+              </button>
+            </div>
+          </div>
         )}
       </div>
+      {charging && (
+        <ReaderPayment
+          order={{ id: order.id, code: order.code, customerName: order.customerName, total: order.total }}
+          simulated={reader.simulated}
+          onClose={() => setCharging(false)}
+          onPaid={() => {
+            setCharging(false);
+            setChoosingPayment(false);
+            onUpdated({ ...order, status: "COMPLETED", paid: true, completedAt: new Date() });
+          }}
+        />
+      )}
     </article>
   );
 }
