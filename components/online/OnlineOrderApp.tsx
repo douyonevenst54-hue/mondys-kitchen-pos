@@ -10,6 +10,7 @@ import { submitOnlineOrder } from "@/app/order/actions";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { OptionPicker } from "@/components/menu/OptionPicker";
 import { CardPayment } from "./CardPayment";
+import { ClubCorner, type ClubPost } from "./ClubCorner";
 
 type MenuItem = {
   id: string;
@@ -50,6 +51,7 @@ type Props = {
   cardEnabled: boolean;
   stripeKey: string | null;
   logoUrl: string | null;
+  clubPosts: ClubPost[];
 };
 
 type Step =
@@ -67,6 +69,7 @@ export function OnlineOrderApp({
   cardEnabled,
   stripeKey,
   logoUrl,
+  clubPosts,
 }: Props) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -152,6 +155,14 @@ export function OnlineOrderApp({
         <>
           <nav aria-label="Menu sections" className="sticky top-0 z-20 border-y border-mondy-border bg-mondy-cream/95 backdrop-blur">
             <div className="mx-auto flex max-w-2xl gap-1 overflow-x-auto px-4 py-2.5">
+              {clubPosts.length > 0 && (
+                <a
+                  href="#ps-club"
+                  className="shrink-0 rounded-full bg-mondy-red px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-mondy-red-dark"
+                >
+                  PS Club
+                </a>
+              )}
               {menu.map((c) => (
                 <a
                   key={c.id}
@@ -165,6 +176,8 @@ export function OnlineOrderApp({
           </nav>
 
           <main className="mx-auto max-w-2xl px-5 pb-36 pt-4">
+            <ClubCorner posts={clubPosts} />
+
             {menu.length === 0 && (
               <p className="py-20 text-center text-mondy-muted">The online menu is being updated. Please call us to order.</p>
             )}

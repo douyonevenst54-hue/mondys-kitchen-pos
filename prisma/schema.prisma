@@ -339,6 +339,7 @@ model Staff {
   orders      Order[]
   shifts      Shift[]
   portionEvents PortionEvent[]
+  announcements Announcement[]
 }
 
 model Shift {
@@ -454,4 +455,34 @@ model LoginThrottle {
   failures    Int       @default(0)
   lockedUntil DateTime?
   updatedAt   DateTime  @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PS CLUB — Passport Special Club announcements on the online order page:
+// giveaway draws, winners, and news. Dates are the restaurant's calendar days
+// ("YYYY-MM-DD"), so "show until Saturday" means all of Saturday in Peabody.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum AnnouncementKind {
+  DRAW    // upcoming giveaway draw
+  WINNER  // draw result
+  NEWS    // anything else worth sharing
+}
+
+model Announcement {
+  id          String           @id @default(cuid())
+  kind        AnnouncementKind @default(NEWS)
+  title       String
+  body        String
+  eventDate   String?          // draw day, YYYY-MM-DD
+  showFrom    String           // first day it appears, YYYY-MM-DD
+  showUntil   String?          // last day it appears; empty = until hidden
+  isPublished Boolean          @default(true)
+  isPinned    Boolean          @default(false)
+  createdById String?
+  createdBy   Staff?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([isPublished, showFrom])
 }
