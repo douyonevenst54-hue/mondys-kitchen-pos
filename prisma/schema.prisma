@@ -61,9 +61,24 @@ model MenuItem {
   modifierGroups  MenuItemModifierGroup[]
   orderItems      OrderItem[]
   portionEvents   PortionEvent[]
+  photo           MenuPhoto?
 
   @@index([categoryId])
   @@index([isAvailable, isActive])
+}
+
+// Dish photo, kept in its own table so menu queries never load the image
+// bytes. Resized on the device before upload (about 100–300 KB each).
+// MenuItem.imageUrl points at /order/photo/<itemId>?v=<version>.
+model MenuPhoto {
+  menuItemId  String   @id
+  data        Bytes
+  contentType String
+  width       Int
+  height      Int
+  updatedAt   DateTime @updatedAt
+
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 }
 
 model ModifierGroup {

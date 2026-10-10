@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, CalendarDays, Tag, Megaphone } from "lucide-react";
+import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, CalendarDays, Tag, Megaphone, Camera } from "lucide-react";
 import { useState } from "react";
 import { ShiftStatus } from "./ShiftStatus";
 
@@ -170,6 +170,15 @@ export function TopBar({
                 >
                   <Tag className="h-4 w-4 text-mondy-muted" aria-hidden />
                   Prices
+                </a>
+              )}
+              {(staffRole === "OWNER" || staffRole === "MANAGER") && (
+                <a
+                  href="/menu/photos"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <Camera className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Dish photos
                 </a>
               )}
               {(staffRole === "OWNER" || staffRole === "MANAGER") && (

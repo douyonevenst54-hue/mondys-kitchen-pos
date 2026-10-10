@@ -21,6 +21,7 @@ type MenuItem = {
   lowStock: number | null;
   menuNumber: number | null;
   isSignature: boolean;
+  imageUrl: string | null;
   optionGroups: OptionGroup[];
 };
 type Category = { id: string; name: string; items: MenuItem[] };
@@ -112,6 +113,14 @@ export function OnlineOrderApp({
     return m;
   }, [cart]);
 
+  /** Why a dish can't be added right now (null = it can). */
+  function unavailableReason(item: MenuItem): string | null {
+    if (!openState.open) return "Ordering is closed right now";
+    if (item.soldOut) return "Sold out today";
+    if (item.lowStock !== null && (qtyInCart.get(item.id) ?? 0) >= item.lowStock) return "That's all we have left";
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-mondy-cream text-mondy-ink">
       {/* Masthead — set like the printed menu */}
@@ -189,6 +198,17 @@ export function OnlineOrderApp({
                   <p className="mt-1 text-sm font-medium italic">A little taste of somewhere different.</p>
                   {c.items.map((item) => (
                     <div key={item.id} className="mt-4">
+                      {item.imageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setChoosing(item)}
+                          aria-label={`See a photo of ${item.name}`}
+                          className="mx-auto mb-4 block w-full max-w-sm overflow-hidden rounded-2xl focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="aspect-[4/3] w-full object-cover" />
+                        </button>
+                      )}
                       <p className="mx-auto max-w-md text-sm leading-relaxed text-mondy-muted">
                         A rotating chef-inspired dish featuring flavors from around the world.
                       </p>
@@ -245,20 +265,47 @@ export function OnlineOrderApp({
                               )}
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => onAddTap(item)}
-                            disabled={disabled}
-                            aria-label={`Add ${item.name}`}
-                            className="relative mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mondy-red text-white shadow-sm transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted disabled:shadow-none"
-                          >
-                            <Plus className="h-5 w-5" aria-hidden />
-                            {inCart > 0 && (
-                              <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-mondy-ink px-1 text-[11px] font-bold text-white">
-                                {inCart}
-                              </span>
-                            )}
-                          </button>
+                          {(() => {
+                            const addButton = (
+                              <button
+                                type="button"
+                                onClick={() => onAddTap(item)}
+                                disabled={disabled}
+                                aria-label={`Add ${item.name}`}
+                                className={`grid h-11 w-11 shrink-0 place-items-center rounded-full bg-mondy-red text-white shadow-sm transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted disabled:shadow-none ${
+                                  item.imageUrl ? "absolute -bottom-2 -right-2 ring-4 ring-mondy-cream" : "relative mt-0.5"
+                                }`}
+                              >
+                                <Plus className="h-5 w-5" aria-hidden />
+                                {inCart > 0 && (
+                                  <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-mondy-ink px-1 text-[11px] font-bold text-white">
+                                    {inCart}
+                                  </span>
+                                )}
+                              </button>
+                            );
+                            if (!item.imageUrl) return addButton;
+                            return (
+                              <div className="relative shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setChoosing(item)}
+                                  aria-label={`See a photo of ${item.name}`}
+                                  className="block h-24 w-24 overflow-hidden rounded-2xl bg-mondy-yellow-soft ring-1 ring-mondy-border focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 sm:h-28 sm:w-28"
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={item.imageUrl}
+                                    alt=""
+                                    loading="lazy"
+                                    decoding="async"
+                                    className={`h-full w-full object-cover ${item.soldOut ? "opacity-50 grayscale" : ""}`}
+                                  />
+                                </button>
+                                {addButton}
+                              </div>
+                            );
+                          })()}
                         </li>
                       );
                     })}
@@ -329,6 +376,8 @@ export function OnlineOrderApp({
         <OptionPicker
           name={choosing.name}
           description={choosing.description}
+          imageUrl={choosing.imageUrl}
+          unavailable={unavailableReason(choosing)}
           basePrice={choosing.price}
           groups={choosing.optionGroups}
           onClose={() => setChoosing(null)}

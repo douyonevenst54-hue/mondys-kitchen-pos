@@ -8,6 +8,9 @@ import { checkSelection, freeRule, groupRule, type OptionGroup } from "@/lib/opt
 type Props = {
   name: string;
   description?: string | null;
+  imageUrl?: string | null;
+  /** When set, the dish can be looked at but not added (e.g. "Sold out today"). */
+  unavailable?: string | null;
   basePrice: number;
   groups: OptionGroup[];
   onAdd: (selectedIds: string[], summary: string, unitPrice: number) => void;
@@ -18,7 +21,7 @@ type Props = {
  * Pick a dish's choices ("Hot or iced", "Protein", "Add-ins"…) before it goes
  * in the cart. Used by the register and the online order page.
  */
-export function OptionPicker({ name, description, basePrice, groups, onAdd, onClose }: Props) {
+export function OptionPicker({ name, description, imageUrl, unavailable, basePrice, groups, onAdd, onClose }: Props) {
   const [picked, setPicked] = useState<Record<string, string[]>>({});
   const [showMissing, setShowMissing] = useState(false);
   const groupRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -50,6 +53,7 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
   }
 
   function add() {
+    if (unavailable) return;
     if (!result.ok) {
       setShowMissing(true);
       if (firstMissing) groupRefs.current[firstMissing.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -70,6 +74,15 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
         className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white font-sans text-mondy-ink shadow-2xl sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt={name}
+            className="aspect-[4/3] max-h-[38vh] w-full shrink-0 bg-mondy-yellow-soft object-cover"
+            decoding="async"
+          />
+        )}
         <header className="flex items-start gap-3 border-b border-mondy-border px-5 pb-4 pt-5">
           <div className="min-w-0 flex-1">
             <h2 id="option-picker-title" className="font-display text-2xl font-black leading-tight">
@@ -87,7 +100,7 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-2">
+        <div className={groups.length ? "flex-1 overflow-y-auto px-5 py-2" : "hidden"}>
           {groups.map((g) => {
             const cur = picked[g.id] ?? [];
             const done = cur.length >= g.min && cur.length > 0;
@@ -168,16 +181,23 @@ export function OptionPicker({ name, description, basePrice, groups, onAdd, onCl
               {result.error}
             </p>
           )}
-          <button
-            type="button"
-            onClick={add}
-            className={`flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold text-white transition focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 ${
-              result.ok ? "bg-mondy-red hover:bg-mondy-red-dark" : "bg-mondy-ink/70"
-            }`}
-          >
-            <span>{result.ok ? "Add to order" : firstMissing ? `Choose ${firstMissing.name.toLowerCase()}` : "Add to order"}</span>
-            <span className="tabular">{formatMoney(price)}</span>
-          </button>
+          {unavailable ? (
+            <p className="flex w-full items-center justify-between rounded-2xl bg-mondy-cream px-5 py-4 text-base font-semibold text-mondy-muted ring-1 ring-mondy-border">
+              <span>{unavailable}</span>
+              <span className="tabular">{formatMoney(price)}</span>
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={add}
+              className={`flex w-full items-center justify-between rounded-2xl px-5 py-4 text-base font-semibold text-white transition focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 ${
+                result.ok ? "bg-mondy-red hover:bg-mondy-red-dark" : "bg-mondy-ink/70"
+              }`}
+            >
+              <span>{result.ok ? "Add to order" : firstMissing ? `Choose ${firstMissing.name.toLowerCase()}` : "Add to order"}</span>
+              <span className="tabular">{formatMoney(price)}</span>
+            </button>
+          )}
         </footer>
       </div>
     </div>

@@ -37,6 +37,7 @@ export type OnlineMenuItem = {
   lowStock: number | null; // set when only a few portions remain
   menuNumber: number | null;
   isSignature: boolean;
+  imageUrl: string | null; // dish photo, if one was added
   optionGroups: OptionGroup[];
 };
 
@@ -81,6 +82,7 @@ export async function getOnlineMenu(): Promise<OnlineMenuCategory[]> {
               : null,
           menuNumber: i.menuNumber,
           isSignature: i.isSignature,
+          imageUrl: i.imageUrl,
           optionGroups: toOptionGroups(i.modifierGroups),
         };
       }),
