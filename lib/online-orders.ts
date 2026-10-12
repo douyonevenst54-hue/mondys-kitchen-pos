@@ -491,7 +491,7 @@ export async function getPublicOrder(orderId: string): Promise<PublicOrder | nul
 export type QueueOrder = {
   id: string;
   code: string;
-  status: "SENT" | "READY" | "COMPLETED";
+  status: "OPEN" | "SENT" | "READY" | "COMPLETED"; // OPEN = card payment not confirmed yet
   customerName: string | null;
   customerPhone: string | null;
   notes: string | null;
@@ -511,6 +511,12 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
       OR: [
         { status: { in: ["SENT", "READY"] } },
         { status: "COMPLETED", completedAt: { gte: since } },
+        // Paid on Clover's page but not confirmed yet (shown so staff can check).
+        {
+          status: "OPEN",
+          createdAt: { gte: new Date(Date.now() - 6 * 60 * 60_000) },
+          payments: { some: { method: "CLOVER_ONLINE", status: "PENDING" } },
+        },
       ],
     },
     orderBy: { createdAt: "asc" },

@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowLeft, Bell, BellOff, CreditCard, Phone, Settings2 } from "lucide-react";
 import { formatMoney } from "@/lib/money";
-import { fetchOnlineQueue, pickUpOnlineOrder, readyOnlineOrder } from "@/app/online/actions";
+import {
+  cancelUnpaidOrder,
+  confirmCardPaidManually,
+  fetchOnlineQueue,
+  pickUpOnlineOrder,
+  readyOnlineOrder,
+} from "@/app/online/actions";
 import type { QueueOrder } from "@/lib/online-orders";
 import { ReaderPayment } from "./ReaderPayment";
 
@@ -45,7 +51,8 @@ export function OnlineQueue({
   const [orders, setOrders] = useState(initial);
   const [soundOn, setSoundOn] = useState(false);
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
-  const known = useRef(new Set(initial.map((o) => o.id)));
+  // Orders still waiting on a card payment don't count as "new" until they're paid.
+  const known = useRef(new Set(initial.filter((o) => o.status !== "OPEN").map((o) => o.id)));
   const soundRef = useRef(soundOn);
   useEffect(() => {
     soundRef.current = soundOn;
@@ -56,8 +63,9 @@ export function OnlineQueue({
       try {
         const next = await fetchOnlineQueue();
         if (!next) return;
-        const fresh = next.filter((o) => !known.current.has(o.id)).map((o) => o.id);
-        next.forEach((o) => known.current.add(o.id));
+        const live = next.filter((o) => o.status !== "OPEN");
+        const fresh = live.filter((o) => !known.current.has(o.id)).map((o) => o.id);
+        live.forEach((o) => known.current.add(o.id));
         if (fresh.length > 0) {
           setNewIds((s) => new Set([...s, ...fresh]));
           if (soundRef.current) chime();
@@ -78,6 +86,7 @@ export function OnlineQueue({
   const toMake = orders.filter((o) => o.status === "SENT");
   const ready = orders.filter((o) => o.status === "READY");
   const done = orders.filter((o) => o.status === "COMPLETED").reverse();
+  const waiting = orders.filter((o) => o.status === "OPEN");
 
   function replace(updated: QueueOrder) {
     setOrders((list) => list.map((o) => (o.id === updated.id ? updated : o)));
@@ -145,6 +154,37 @@ export function OnlineQueue({
           </p>
         )}
       </header>
+
+      {waiting.length > 0 && (
+        <section aria-labelledby="waiting-h" className="mx-auto max-w-5xl px-4 pt-6 sm:px-6">
+          <h2 id="waiting-h" className="font-display text-lg font-bold text-mondy-ink">
+            Waiting for card payment <span className="text-mondy-muted">{waiting.length}</span>
+          </h2>
+          <p className="mt-0.5 font-sans text-sm text-mondy-muted">
+            The customer went to Clover to pay. Paid orders move to &ldquo;To make&rdquo; by themselves.
+            {canManage
+              ? " If one stays here, check Clover → Sales activity and confirm it."
+              : " If one stays here, ask a manager to check Clover."}
+          </p>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+            {waiting.map((o) => (
+              <WaitingCard
+                key={o.id}
+                order={o}
+                time={time}
+                canManage={canManage}
+                onDone={(paid) =>
+                  setOrders((list) =>
+                    paid
+                      ? list.map((x) => (x.id === o.id ? { ...x, status: "SENT", paid: true } : x))
+                      : list.filter((x) => x.id !== o.id),
+                  )
+                }
+              />
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-2">
         <Column title="To make" count={toMake.length} empty="No orders waiting.">
@@ -371,5 +411,82 @@ function OrderCard({
         />
       )}
     </article>
+  );
+}
+
+function WaitingCard({
+  order,
+  time,
+  canManage,
+  onDone,
+}: {
+  order: QueueOrder;
+  time: (d: Date | string) => string;
+  canManage: boolean;
+  onDone: (paid: boolean) => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<"paid" | "cancel" | null>(null);
+
+  function act(kind: "paid" | "cancel") {
+    setError(null);
+    startTransition(async () => {
+      const res = kind === "paid" ? await confirmCardPaidManually(order.id) : await cancelUnpaidOrder(order.id);
+      if (!res.ok) setError(res.error);
+      else onDone(kind === "paid");
+    });
+  }
+
+  const btn =
+    "rounded-lg px-3 py-2 font-sans text-xs font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-mondy-red/50 disabled:opacity-50";
+
+  return (
+    <li className="rounded-2xl border-2 border-dashed border-mondy-border bg-white/70 p-3 font-sans">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-display text-lg font-black tabular text-mondy-ink">{order.code}</p>
+          <p className="text-sm text-mondy-ink">{order.customerName}</p>
+        </div>
+        <div className="text-right text-xs text-mondy-muted">
+          <p>Placed {time(order.createdAt)}</p>
+          <p className="font-semibold text-mondy-ink">{formatMoney(order.total)} by card</p>
+        </div>
+      </div>
+      <p className="mt-1 text-xs text-mondy-muted">{order.items.map((i) => `${i.quantity}× ${i.name}`).join(", ")}</p>
+      {error && (
+        <p role="alert" className="mt-2 text-xs text-mondy-red-dark">
+          {error}
+        </p>
+      )}
+      {canManage && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {confirm ? (
+            <>
+              <span className="text-xs">
+                {confirm === "paid"
+                  ? `You see ${formatMoney(order.total)} paid in Clover for ${order.code}?`
+                  : "Customer didn't pay. Remove this order?"}
+              </span>
+              <button type="button" disabled={pending} onClick={() => act(confirm)} className={`${btn} bg-mondy-ink text-white hover:bg-black`}>
+                {confirm === "paid" ? "Yes, send to kitchen" : "Yes, remove"}
+              </button>
+              <button type="button" onClick={() => setConfirm(null)} className={`${btn} ring-1 ring-mondy-border hover:bg-mondy-cream`}>
+                Back
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" disabled={pending} onClick={() => setConfirm("paid")} className={`${btn} bg-mondy-red text-white hover:bg-mondy-red-dark`}>
+                Paid: checked in Clover
+              </button>
+              <button type="button" disabled={pending} onClick={() => setConfirm("cancel")} className={`${btn} ring-1 ring-mondy-border hover:bg-mondy-cream`}>
+                Not paid
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </li>
   );
 }

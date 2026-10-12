@@ -161,41 +161,56 @@ export function verifyCloverSignature(rawBody: string, header: string | null, no
 }
 
 /**
- * Clover says a checkout was paid: send the order to the kitchen. Safe to
- * call more than once; only the first call does anything.
+ * Clover says a checkout was paid (webhook): send the order to the kitchen.
+ * Safe to call more than once; only the first call does anything.
  */
 export async function finalizeCloverPayment(sessionId: string, paymentId: string): Promise<"done" | "already" | "unknown"> {
   const payment = await prisma.payment.findFirst({
     where: { method: "CLOVER_ONLINE", processorRef: { startsWith: ref(sessionId) } },
-    select: { id: true, status: true, orderId: true, order: { select: { status: true, staffId: true } } },
+    select: { orderId: true },
+  });
+  if (!payment) return "unknown";
+  return completeCloverOrder(payment.orderId, `${ref(sessionId)}:${paymentId}`);
+}
+
+/**
+ * Mark a Clover-paid online order as paid and send it to the kitchen.
+ * `proof` is stored on the payment: the Clover payment id, or who confirmed it.
+ */
+export async function completeCloverOrder(orderId: string, proof: string): Promise<"done" | "already" | "unknown"> {
+  const payment = await prisma.payment.findFirst({
+    where: { orderId, method: "CLOVER_ONLINE" },
+    select: { id: true, status: true, processorRef: true, order: { select: { status: true, staffId: true } } },
   });
   if (!payment) return "unknown";
   if (payment.status === "COMPLETED") return "already";
+  if (payment.order.status !== "OPEN") return "already";
 
   const settings = await getSettings();
   const readyAt = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
+  const keepRef = payment.processorRef && !proof.startsWith("clover:") ? `${payment.processorRef}|${proof}` : proof;
 
-  const result = await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
     const claimed = await tx.payment.updateMany({
       where: { id: payment.id, status: "PENDING" },
-      data: { status: "COMPLETED", processedAt: new Date(), processorRef: `${ref(sessionId)}:${paymentId}`.slice(0, 190) },
+      data: { status: "COMPLETED", processedAt: new Date(), processorRef: keepRef.slice(0, 190) },
     });
     if (claimed.count === 0) return "already" as const;
 
-    const items = await tx.orderItem.findMany({ where: { orderId: payment.orderId }, select: { menuItemId: true, quantity: true } });
+    const items = await tx.orderItem.findMany({ where: { orderId }, select: { menuItemId: true, quantity: true } });
     let soldOutNote: string | null = null;
     try {
       await tx.$executeRaw`SAVEPOINT portions`;
-      await sellPortions(tx, items, payment.order.staffId, payment.orderId);
+      await sellPortions(tx, items, payment.order.staffId, orderId);
     } catch (e) {
       if (!(e instanceof PortionError)) throw e;
       // Paid already: still send it, and tell the team to call the customer.
       await tx.$executeRaw`ROLLBACK TO SAVEPOINT portions`;
       soldOutNote = `⚠ Paid by card, then: ${e.message}. Call the customer to swap or refund in Clover.`;
     }
-    const order = await tx.order.findUnique({ where: { id: payment.orderId }, select: { notes: true } });
+    const order = await tx.order.findUnique({ where: { id: orderId }, select: { notes: true } });
     await tx.order.updateMany({
-      where: { id: payment.orderId, status: "OPEN" },
+      where: { id: orderId, status: "OPEN" },
       data: {
         status: "SENT",
         estimatedReadyAt: readyAt,
@@ -204,5 +219,114 @@ export async function finalizeCloverPayment(sessionId: string, paymentId: string
     });
     return "done" as const;
   });
-  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Without the webhook: look the payment up in Clover.
+//
+// Clover has no "is this checkout paid?" call, but every Hosted Checkout
+// payment creates a Clover order whose line is named "Rosewood Cafe order
+// MK-123456". With a read-only API token (CLOVER_API_TOKEN: Orders + Payments
+// read) the POS finds that order and checks it has a successful payment for
+// the full amount.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function cloverLookupEnabled(): boolean {
+  return getCloverStatus().enabled && read("CLOVER_API_TOKEN").length > 10;
+}
+
+function restBase(): string {
+  const fake = read("CLOVER_FAKE_API_URL");
+  if (fake && read("CLOVER_ENV").toLowerCase() === "sandbox") return fake.replace(/\/$/, "");
+  return read("CLOVER_ENV").toLowerCase() === "sandbox" ? "https://apisandbox.dev.clover.com" : "https://api.clover.com";
+}
+
+type CloverOrder = {
+  id: string;
+  title?: string;
+  note?: string;
+  lineItems?: { elements?: { name?: string; note?: string }[] };
+  payments?: { elements?: { id: string; amount?: number; result?: string }[] };
+};
+
+/**
+ * Which of these orders have a successful Clover payment? One Clover API call
+ * covers them all. Returns orderId → Clover payment id.
+ */
+export async function findCloverPayments(
+  orders: { id: string; code: string; total: number; createdAt: Date }[],
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  if (!orders.length || !cloverLookupEnabled()) return found;
+
+  const since = Math.min(...orders.map((o) => o.createdAt.getTime())) - 5 * 60_000;
+  const url =
+    `${restBase()}/v3/merchants/${encodeURIComponent(read("CLOVER_MERCHANT_ID"))}/orders` +
+    `?filter=${encodeURIComponent(`createdTime>=${since}`)}&expand=lineItems,payments&limit=200`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { authorization: `Bearer ${read("CLOVER_API_TOKEN")}`, accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (e) {
+    console.error("Clover lookup: network error", e);
+    return found;
+  }
+  if (!res.ok) {
+    console.error(`Clover lookup failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+    return found;
+  }
+  const data = (await res.json().catch(() => null)) as { elements?: CloverOrder[] } | null;
+  const list = data?.elements ?? [];
+
+  for (const o of orders) {
+    if (!o.code) continue;
+    const match = list.find((c) => {
+      const text = [c.title, c.note, ...(c.lineItems?.elements ?? []).flatMap((l) => [l.name, l.note])].join(" ");
+      return text.includes(o.code);
+    });
+    if (!match) continue;
+    const ok = (match.payments?.elements ?? []).filter((p) => (p.result ?? "SUCCESS") === "SUCCESS");
+    const paid = ok.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+    if (ok.length && paid >= Math.round(o.total * 100)) found.set(o.id, ok[0].id);
+    else console.warn(`Clover order for ${o.code} found but not fully paid (${paid} cents)`);
+  }
+  if (found.size < orders.length && list.length) {
+    // Helps adjust the matching if Clover names things differently.
+    const sample = list[0];
+    console.info("Clover lookup: unmatched orders; latest Clover order looks like", JSON.stringify({
+      title: sample.title, note: sample.note, lines: sample.lineItems?.elements?.slice(0, 2).map((l) => l.name),
+    }).slice(0, 400));
+  }
+  return found;
+}
+
+/**
+ * Check Clover for online orders still waiting on a card payment (all recent
+ * ones, or just one) and send the paid ones to the kitchen.
+ */
+export async function confirmCloverPayments(onlyOrderId?: string): Promise<number> {
+  if (!cloverLookupEnabled()) return 0;
+  const waiting = await prisma.order.findMany({
+    where: {
+      ...(onlyOrderId ? { id: onlyOrderId } : {}),
+      source: "ONLINE_PICKUP",
+      status: "OPEN",
+      createdAt: { gte: new Date(Date.now() - 6 * 60 * 60_000) },
+      payments: { some: { method: "CLOVER_ONLINE", status: "PENDING" } },
+    },
+    select: { id: true, onlineConfirmationCode: true, total: true, createdAt: true },
+    take: 30,
+  });
+  if (!waiting.length) return 0;
+  const paid = await findCloverPayments(
+    waiting.map((w) => ({ id: w.id, code: w.onlineConfirmationCode ?? "", total: Number(w.total), createdAt: w.createdAt })),
+  );
+  let n = 0;
+  for (const [orderId, paymentId] of paid) {
+    if ((await completeCloverOrder(orderId, `clover-payment:${paymentId}`)) === "done") n++;
+  }
+  return n;
 }

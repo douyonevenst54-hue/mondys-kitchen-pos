@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { confirmCloverPayments } from "@/lib/clover";
 import {
   MAX_LINES,
   MAX_QTY_PER_LINE,
@@ -89,6 +90,17 @@ function forClient(order: PublicOrder | null): ClientOrder | null {
 export async function refreshOnlineOrder(orderId: string): Promise<ClientOrder | null> {
   if (typeof orderId !== "string" || orderId.length > 64) return null;
   const order = await getPublicOrder(orderId);
+  if (order?.status === "OPEN" && order.payment?.method === "CLOVER_ONLINE") {
+    try {
+      // No webhook needed: look the payment up in Clover.
+      if ((await confirmCloverPayments(order.id)) > 0) {
+        revalidatePath("/online");
+        return forClient(await getPublicOrder(orderId));
+      }
+    } catch (e) {
+      console.error("Clover check from status page failed:", e);
+    }
+  }
   if (order?.status === "OPEN" && order.stripePaymentIntentId) {
     try {
       await finalizeCardPayment(order.stripePaymentIntentId);
