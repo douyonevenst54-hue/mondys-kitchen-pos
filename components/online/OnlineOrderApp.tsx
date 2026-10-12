@@ -50,6 +50,7 @@ type Props = {
   openState: OpenState;
   payAtPickupLimit: number;
   cardEnabled: boolean;
+  cardProvider: "clover" | "stripe" | null;
   stripeKey: string | null;
   logoUrl: string | null;
   clubPosts: ClubPost[];
@@ -68,6 +69,7 @@ export function OnlineOrderApp({
   openState,
   payAtPickupLimit,
   cardEnabled,
+  cardProvider,
   stripeKey,
   logoUrl,
   clubPosts,
@@ -350,6 +352,7 @@ export function OnlineOrderApp({
           total={total}
           open={openState.open}
           cardEnabled={cardEnabled}
+          cardProvider={cardProvider}
           payAtPickupLimit={payAtPickupLimit}
           onBack={() => setStep({ name: "menu" })}
           onChangeQty={changeQty}
@@ -398,6 +401,7 @@ function Checkout({
   total,
   open,
   cardEnabled,
+  cardProvider,
   payAtPickupLimit,
   onBack,
   onChangeQty,
@@ -410,6 +414,7 @@ function Checkout({
   total: number;
   open: boolean;
   cardEnabled: boolean;
+  cardProvider: "clover" | "stripe" | null;
   payAtPickupLimit: number;
   onBack: () => void;
   onChangeQty: (key: string, delta: number) => void;
@@ -425,6 +430,7 @@ function Checkout({
   const [payment, setPayment] = useState<"card" | "pickup">(cardEnabled ? "card" : "pickup");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [leaving, setLeaving] = useState(false);
 
   const effectivePayment = payment === "pickup" && !pickupAllowed ? "card" : payment;
 
@@ -451,7 +457,10 @@ function Checkout({
           return;
         }
         if (res.kind === "pickup") onPickupPlaced(res.orderId);
-        else onCardReady(res.orderId, res.clientSecret, res.total);
+        else if (res.kind === "redirect") {
+          setLeaving(true);
+          window.location.assign(res.href); // Clover's secure payment page
+        } else onCardReady(res.orderId, res.clientSecret, res.total);
       } catch {
         setError("Couldn't reach the restaurant. Check your connection and try again.");
       }
@@ -596,7 +605,7 @@ function Checkout({
                     checked={effectivePayment === "card"}
                     onChange={() => setPayment("card")}
                     title="Pay now with card"
-                    detail="Apple Pay, Google Pay, and cards"
+                    detail={cardProvider === "clover" ? "Secure checkout by Clover" : "Apple Pay, Google Pay, and cards"}
                   />
                 )}
                 <PayOption
@@ -621,10 +630,12 @@ function Checkout({
 
             <button
               type="submit"
-              disabled={pending || !open || cart.length === 0}
+              disabled={pending || leaving || !open || cart.length === 0}
               className="w-full rounded-2xl bg-mondy-red px-5 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:opacity-60"
             >
-              {pending
+              {leaving
+                ? "Opening secure checkout…"
+                : pending
                 ? "Placing order…"
                 : effectivePayment === "card"
                   ? "Continue to payment"

@@ -5,6 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
 import { getStripe, toCents } from "@/lib/stripe";
+import { CloverError, attachCloverSession, createCloverCheckout, getCloverStatus } from "@/lib/clover";
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
 import { onlineOpenState } from "@/lib/online-hours";
@@ -234,10 +235,13 @@ export type PlaceOrderInput = {
   customerEmail: string | null;
   notes: string | null;
   payment: "card" | "pickup";
+  /** https://mondyskitchen.com — where Clover sends the customer back. */
+  returnBase: string;
 };
 
 export type PlaceOrderResult =
   | { kind: "card"; orderId: string; clientSecret: string; total: number }
+  | { kind: "redirect"; orderId: string; href: string }
   | { kind: "pickup"; orderId: string };
 
 export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
@@ -254,6 +258,8 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
 
   const staffId = await getOnlineStaffId();
   const isCard = input.payment === "card";
+  // Clover (the restaurant's own processor) takes priority over Stripe when connected.
+  const useClover = isCard && getCloverStatus().enabled;
   const readyAt = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
 
   const order = await withUniqueConfirmationCode((code) =>
@@ -278,7 +284,7 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
           items: { create: priced },
           payments: {
             create: {
-              method: isCard ? "STRIPE_ONLINE" : "CASH",
+              method: isCard ? (useClover ? "CLOVER_ONLINE" : "STRIPE_ONLINE") : "CASH",
               status: "PENDING",
               amount: total,
             },
@@ -298,6 +304,29 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
   });
 
   if (!isCard) return { kind: "pickup", orderId: order.id };
+
+  if (useClover) {
+    try {
+      const summary = priced.map((l) => `${l.quantity}× ${l.nameSnapshot}${l.notes ? ` (${l.notes})` : ""}`).join(", ");
+      const { href, sessionId } = await createCloverCheckout({
+        orderId: order.id,
+        code: order.onlineConfirmationCode ?? "",
+        total,
+        summary,
+        customer: { name: input.customerName, email: input.customerEmail, phone: input.customerPhone },
+        returnBase: input.returnBase,
+      });
+      await attachCloverSession(order.id, sessionId);
+      return { kind: "redirect", orderId: order.id, href };
+    } catch (e) {
+      if (!(e instanceof CloverError)) console.error("Clover checkout failed:", e);
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: "VOIDED", voidedAt: new Date(), voidedReason: "Card payment could not be started" },
+      });
+      throw new OnlineOrderError("Card payments aren't working right now. Choose pay at pickup or call us.");
+    }
+  }
 
   try {
     const stripe = getStripe();

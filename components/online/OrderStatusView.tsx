@@ -16,10 +16,13 @@ export function OrderStatusView({
   initial,
   restaurant,
   timezone,
+  paymentNote = null,
 }: {
   initial: ClientOrder;
   restaurant: { name: string; address: string | null; phone: string | null };
   timezone: string;
+  /** Set when the customer comes back from Clover without paying. */
+  paymentNote?: "failed" | "cancelled" | null;
 }) {
   const [order, setOrder] = useState(initial);
   const finished = order.status === "COMPLETED" || order.status === "VOIDED";
@@ -33,9 +36,9 @@ export function OrderStatusView({
       } catch {
         // Try again on the next tick.
       }
-    }, 15_000);
+    }, order.status === "OPEN" ? 4_000 : 15_000); // check often while a payment is being confirmed
     return () => clearInterval(t);
-  }, [order.id, finished]);
+  }, [order.id, finished, order.status]);
 
   const time = (d: Date | string) =>
     new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: timezone }).format(
@@ -43,12 +46,17 @@ export function OrderStatusView({
     );
 
   const reached = STEPS.findIndex((s) => s.key === order.status);
-  const payAtCounter = order.payment?.status === "PENDING" && order.payment.method !== "STRIPE_ONLINE";
+  const payAtCounter =
+    order.payment?.status === "PENDING" && order.payment.method !== "STRIPE_ONLINE" && order.payment.method !== "CLOVER_ONLINE";
 
   let headline: string;
   let sub: string;
-  if (order.status === "OPEN") {
-    headline = "Waiting for your payment";
+  const unpaid = order.status === "OPEN" && paymentNote !== null;
+  if (unpaid) {
+    headline = paymentNote === "cancelled" ? "Payment cancelled" : "Your payment didn't go through";
+    sub = "No money was taken and the kitchen didn't get this order. Order again, or choose pay at pickup.";
+  } else if (order.status === "OPEN") {
+    headline = order.payment?.method === "CLOVER_ONLINE" ? "Confirming your payment…" : "Waiting for your payment";
     sub = "This page updates by itself once your payment goes through.";
   } else if (order.status === "VOIDED") {
     headline = "This order was cancelled";
@@ -75,8 +83,16 @@ export function OrderStatusView({
             {headline}
           </h1>
           <p className="mt-1.5 text-white/90">{sub}</p>
+          {unpaid && (
+            <Link
+              href="/order"
+              className="mt-5 inline-block rounded-2xl bg-white px-5 py-3 font-semibold text-mondy-red hover:bg-mondy-cream focus:outline-none focus-visible:ring-4 focus-visible:ring-white/50"
+            >
+              Back to the menu
+            </Link>
+          )}
 
-          <div className="mt-6 inline-block rounded-2xl bg-white px-5 py-3 text-mondy-ink">
+          <div className={`mt-6 rounded-2xl bg-white px-5 py-3 text-mondy-ink ${unpaid ? "hidden" : "inline-block"}`}>
             <p className="text-xs text-mondy-muted">Order code</p>
             <p className="font-display text-3xl font-black tracking-wide tabular">{order.code}</p>
           </div>

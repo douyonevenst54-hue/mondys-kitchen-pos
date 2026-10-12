@@ -291,6 +291,7 @@ enum PaymentMethod {
   CASH
   CARD_PRESENT      // chip/tap/swipe via Epos Now terminal
   STRIPE_ONLINE     // online card payment via Stripe
+  CLOVER_ONLINE     // online card payment on Clover's Hosted Checkout page
   CARD_MANUAL       // keyed in (phone orders, card not present)
   MOBILE_WALLET     // Apple Pay / Google Pay / Samsung Pay (via Epos Now)
   GIFT_CARD         // store gift card

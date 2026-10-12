@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import {
   MAX_LINES,
   MAX_QTY_PER_LINE,
@@ -47,6 +48,7 @@ export type SubmitOrderInput = z.input<typeof OrderSchema>;
 export type SubmitOrderResult =
   | { ok: true; kind: "card"; orderId: string; clientSecret: string; total: number }
   | { ok: true; kind: "pickup"; orderId: string }
+  | { ok: true; kind: "redirect"; orderId: string; href: string }
   | { ok: false; error: string };
 
 export async function submitOnlineOrder(input: SubmitOrderInput): Promise<SubmitOrderResult> {
@@ -57,7 +59,11 @@ export async function submitOnlineOrder(input: SubmitOrderInput): Promise<Submit
   try {
     const { website: _honeypot, ...data } = parsed.data;
     void _honeypot;
-    const res = await placeOnlineOrder(data);
+    const h = await headers();
+    const host = (h.get("x-forwarded-host") ?? h.get("host") ?? "").split(",")[0].trim();
+    const proto = (h.get("x-forwarded-proto") ?? "https").split(",")[0].trim();
+    const returnBase = `${host.startsWith("localhost") ? proto : "https"}://${host}`;
+    const res = await placeOnlineOrder({ ...data, returnBase });
     if (res.kind === "pickup") {
       revalidatePath("/online");
       revalidatePath("/");

@@ -10,9 +10,11 @@ export const metadata: Metadata = {
 };
 
 type Params = Promise<{ id: string }>;
+type Search = Promise<{ payment?: string }>;
 
-export default async function OrderStatusPage({ params }: { params: Params }) {
+export default async function OrderStatusPage({ params, searchParams }: { params: Params; searchParams: Search }) {
   const { id } = await params;
+  const { payment } = await searchParams;
   const [order, settings] = await Promise.all([refreshOnlineOrder(id), getSettings()]);
   if (!order) notFound();
 
@@ -21,6 +23,7 @@ export default async function OrderStatusPage({ params }: { params: Params }) {
       initial={order}
       restaurant={{ name: settings.name, address: settings.address, phone: settings.phone }}
       timezone={settings.timezone}
+      paymentNote={payment === "failed" || payment === "cancelled" ? payment : null}
     />
   );
 }

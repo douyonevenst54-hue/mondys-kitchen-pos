@@ -82,7 +82,13 @@ export function OnlineSettingsForm({
 // Card payments: on/off at a glance
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type CardInfo = { enabled: boolean; mode: "test" | "live" | null; problem: string | null; webhook: boolean };
+export type CardInfo = {
+  provider: "Clover" | "Stripe";
+  enabled: boolean;
+  mode: "test" | "live" | null;
+  problem: string | null;
+  webhook: boolean;
+};
 
 function CardStatusLine({ card }: { card: CardInfo }) {
   const ok = card.enabled && card.webhook;
@@ -94,13 +100,14 @@ function CardStatusLine({ card }: { card: CardInfo }) {
       <p className="flex items-center gap-2 text-sm font-semibold text-mondy-ink">
         <span aria-hidden className={`h-2.5 w-2.5 rounded-full ${card.enabled ? "bg-green-600" : "bg-mondy-red"}`} />
         {card.enabled
-          ? `Card payments: on${card.mode === "test" ? " (test mode, no real charges)" : " (live)"}`
+          ? `Card payments: on with ${card.provider}${card.mode === "test" ? " (test mode, no real charges)" : " (live)"}`
           : "Card payments: off. Customers only see Pay at pickup"}
       </p>
       {!card.enabled && card.problem && <p className="mt-1 text-xs text-mondy-ink">Reason: {card.problem}.</p>}
       {card.enabled && !card.webhook && (
         <p className="mt-1 text-xs text-mondy-ink">
-          STRIPE_WEBHOOK_SECRET is missing, so paid orders may not reach the kitchen. Add it in Vercel and redeploy.
+          {card.provider === "Clover" ? "CLOVER_WEBHOOK_SECRET" : "STRIPE_WEBHOOK_SECRET"} is missing, so paid orders may not reach
+          the kitchen. Add it in Vercel and redeploy.
         </p>
       )}
       {!card.enabled && (

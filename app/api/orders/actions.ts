@@ -365,6 +365,10 @@ export async function voidOrder(
     }
   }
 
+  // Clover online payments are refunded from the Clover dashboard.
+  const paidClover = order.payments.some((p) => p.method === "CLOVER_ONLINE" && p.status === "COMPLETED");
+  const voidNote = paidClover ? `${parsed.data.reason} · Refund the card in the Clover dashboard` : parsed.data.reason;
+
   const managerId = manager.id;
   await prisma.$transaction(async (tx) => {
     await tx.order.update({
@@ -372,7 +376,7 @@ export async function voidOrder(
       data: {
         status: "VOIDED",
         voidedAt: new Date(),
-        voidedReason: parsed.data.reason,
+        voidedReason: voidNote,
         voidedByStaffId: managerId,
       },
     });

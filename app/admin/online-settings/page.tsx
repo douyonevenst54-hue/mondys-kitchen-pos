@@ -4,6 +4,7 @@ import { getSettings } from "@/lib/menu";
 import { OnlineSettingsForm } from "@/components/admin/OnlineSettingsForm";
 import { verifySession } from "@/lib/session";
 import { getCardStatus, webhookConfigured } from "@/lib/stripe-config";
+import { getCloverStatus } from "@/lib/clover";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -27,6 +28,7 @@ export default async function OnlineSettingsPage() {
 
   const settings = await getSettings();
   const card = getCardStatus();
+  const clover = getCloverStatus();
 
   return (
     <OnlineSettingsForm
@@ -34,12 +36,17 @@ export default async function OnlineSettingsPage() {
       paused={settings.onlineOrderingPaused}
       businessHours={settings.businessHours}
       prepTimeMinutes={settings.onlinePrepTimeMinutes}
-      card={{
-        enabled: card.enabled,
-        mode: card.enabled ? card.mode : null,
-        problem: card.enabled ? null : card.problem,
-        webhook: webhookConfigured(),
-      }}
+      card={
+        clover.enabled
+          ? { provider: "Clover", enabled: true, mode: clover.env === "sandbox" ? "test" : "live", problem: null, webhook: clover.webhook }
+          : {
+              provider: "Stripe",
+              enabled: card.enabled,
+              mode: card.enabled ? card.mode : null,
+              problem: card.enabled ? null : card.problem,
+              webhook: webhookConfigured(),
+            }
+      }
     />
   );
 }
