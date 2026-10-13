@@ -330,3 +330,96 @@ export async function confirmCloverPayments(onlyOrderId?: string): Promise<numbe
   }
   return n;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Register card payments: the cashier runs the card on the Clover device, and
+// the POS only records the sale once Clover shows that exact payment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type DevicePayment = { id: string; cents: number; card: string | null; at: number };
+
+type CloverPayment = {
+  id: string;
+  amount?: number;
+  tipAmount?: number;
+  result?: string;
+  createdTime?: number;
+  cardTransaction?: { last4?: string; cardType?: string };
+};
+
+const DEVICE_WINDOW_MS = 30 * 60_000; // a payment must be from the last 30 minutes
+
+const paidCents = (p: CloverPayment) => (p.amount ?? 0) + (p.tipAmount ?? 0);
+const cardOf = (p: CloverPayment) => {
+  const t = p.cardTransaction;
+  if (!t?.last4 && !t?.cardType) return null;
+  const brand = t.cardType ? t.cardType.charAt(0) + t.cardType.slice(1).toLowerCase().replace(/_/g, " ") : "Card";
+  return t.last4 ? `${brand} •••• ${t.last4}` : brand;
+};
+
+async function cloverGet<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${restBase()}/v3/merchants/${encodeURIComponent(read("CLOVER_MERCHANT_ID"))}${path}`, {
+      headers: { authorization: `Bearer ${read("CLOVER_API_TOKEN")}`, accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      console.error(`Clover ${path.split("?")[0]} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+      return null;
+    }
+    return (await res.json()) as T;
+  } catch (e) {
+    console.error("Clover request failed", e);
+    return null;
+  }
+}
+
+/** Clover payment ids the POS has already used for a sale or an online order. */
+async function alreadyUsed(ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await prisma.payment.findMany({
+    where: { OR: ids.map((id) => ({ processorRef: { contains: id } })) },
+    select: { processorRef: true },
+  });
+  return new Set(ids.filter((id) => rows.some((r) => r.processorRef?.includes(id))));
+}
+
+/** Approved Clover payments for exactly this amount in the last 30 minutes, not used yet. Newest first. */
+export async function findDevicePayments(totalCents: number): Promise<DevicePayment[] | null> {
+  if (!cloverLookupEnabled()) return null;
+  const since = Date.now() - DEVICE_WINDOW_MS;
+  const data = await cloverGet<{ elements?: CloverPayment[] }>(
+    `/payments?filter=${encodeURIComponent(`createdTime>=${since}`)}&expand=cardTransaction&limit=100`,
+  );
+  if (!data) return null;
+  const matches = (data.elements ?? []).filter((p) => p.result === "SUCCESS" && paidCents(p) === totalCents);
+  const used = await alreadyUsed(matches.map((p) => p.id));
+  return matches
+    .filter((p) => !used.has(p.id))
+    .map((p) => ({ id: p.id, cents: paidCents(p), card: cardOf(p), at: p.createdTime ?? 0 }))
+    .sort((a, b) => b.at - a.at);
+}
+
+/** Re-check one Clover payment right before the sale is saved. */
+export async function verifyDevicePayment(
+  paymentId: string,
+  totalCents: number,
+): Promise<{ ok: true; ref: string; last4: string | null; brand: string | null } | { ok: false; error: string }> {
+  if (!/^[A-Z0-9]{6,20}$/i.test(paymentId)) return { ok: false, error: "Invalid Clover payment" };
+  if (!cloverLookupEnabled()) return { ok: false, error: "Clover isn't connected for card checks" };
+  const p = await cloverGet<CloverPayment>(`/payments/${encodeURIComponent(paymentId)}?expand=cardTransaction`);
+  if (!p) return { ok: false, error: "Couldn't reach Clover to check the payment. Try again." };
+  if (p.result !== "SUCCESS") return { ok: false, error: "Clover shows this payment as not approved" };
+  if (paidCents(p) !== totalCents) return { ok: false, error: "The Clover payment amount doesn't match this sale" };
+  if (!p.createdTime || Date.now() - p.createdTime > DEVICE_WINDOW_MS) {
+    return { ok: false, error: "That Clover payment is too old for this sale" };
+  }
+  if ((await alreadyUsed([p.id])).size) return { ok: false, error: "That Clover payment was already used for another sale" };
+  return {
+    ok: true,
+    ref: `clover-pay:${p.id}`,
+    last4: p.cardTransaction?.last4 ?? null,
+    brand: p.cardTransaction?.cardType ?? null,
+  };
+}

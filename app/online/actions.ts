@@ -4,7 +4,8 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getManagerFromSession, getStaffFromSession } from "@/lib/staff";
 import { prisma } from "@/lib/prisma";
-import { completeCloverOrder, confirmCloverPayments } from "@/lib/clover";
+import { completeCloverOrder, confirmCloverPayments, verifyDevicePayment } from "@/lib/clover";
+import { checkManagerPin } from "@/lib/manager-pin";
 import {
   OnlineOrderError,
   getOnlineQueue,
@@ -39,12 +40,32 @@ export async function readyOnlineOrder(orderId: string): Promise<Result> {
 export async function pickUpOnlineOrder(
   orderId: string,
   paidWith: "CASH" | "CARD_PRESENT" | null,
+  verification?: { kind: "clover"; paymentId: string } | { kind: "manager"; pin: string },
 ): Promise<Result> {
   const parsed = z
     .object({ orderId: z.string().min(1).max(64), paidWith: z.enum(["CASH", "CARD_PRESENT"]).nullable() })
     .safeParse({ orderId, paidWith });
   if (!parsed.success) return { ok: false, error: "Invalid request" };
-  return run((staffId) => markOnlinePickedUp(parsed.data.orderId, staffId, parsed.data.paidWith));
+
+  // A card at pickup must be proven, the same as on the register.
+  let proof: { ref: string; last4: string | null; brand: string | null } | null = null;
+  if (parsed.data.paidWith === "CARD_PRESENT") {
+    const staff = await getStaffFromSession();
+    if (!staff) return { ok: false, error: "Sign in again" };
+    if (!verification) return { ok: false, error: "This card payment hasn't been confirmed yet" };
+    if (verification.kind === "clover") {
+      const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId }, select: { total: true } });
+      if (!order) return { ok: false, error: "Order not found" };
+      const r = await verifyDevicePayment(String(verification.paymentId), Math.round(Number(order.total) * 100));
+      if (!r.ok) return { ok: false, error: r.error };
+      proof = { ref: r.ref, last4: r.last4, brand: r.brand };
+    } else {
+      const m = await checkManagerPin(String(verification.pin), staff.id);
+      if (!m.ok) return { ok: false, error: m.error };
+      proof = { ref: `approved-by:${m.name}`.slice(0, 60), last4: null, brand: null };
+    }
+  }
+  return run((staffId) => markOnlinePickedUp(parsed.data.orderId, staffId, parsed.data.paidWith, proof));
 }
 
 /** Polled by the queue screen. Also picks up Clover payments the webhook missed. */

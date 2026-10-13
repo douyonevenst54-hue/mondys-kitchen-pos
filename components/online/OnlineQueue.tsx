@@ -13,6 +13,7 @@ import {
 } from "@/app/online/actions";
 import type { QueueOrder } from "@/lib/online-orders";
 import { ReaderPayment } from "./ReaderPayment";
+import { PaymentProof, type Verification } from "@/components/cashier/PaymentProof";
 
 function chime() {
   try {
@@ -268,6 +269,7 @@ function OrderCard({
   const [error, setError] = useState<string | null>(null);
   const [choosingPayment, setChoosingPayment] = useState(false);
   const [charging, setCharging] = useState(false);
+  const [provingCard, setProvingCard] = useState(false);
 
   function markReady() {
     setError(null);
@@ -278,12 +280,15 @@ function OrderCard({
     });
   }
 
-  function pickUp(paidWith: "CASH" | "CARD_PRESENT" | null) {
+  function pickUp(paidWith: "CASH" | "CARD_PRESENT" | null, verification?: Verification) {
     setError(null);
     startTransition(async () => {
-      const res = await pickUpOnlineOrder(order.id, paidWith);
+      const res = await pickUpOnlineOrder(order.id, paidWith, verification);
       if (!res.ok) setError(res.error);
-      else onUpdated({ ...order, status: "COMPLETED", paid: true, completedAt: new Date() });
+      else {
+        setProvingCard(false);
+        onUpdated({ ...order, status: "COMPLETED", paid: true, completedAt: new Date() });
+      }
     });
   }
 
@@ -380,7 +385,10 @@ function OrderCard({
               </button>
               <button
                 type="button"
-                onClick={() => pickUp("CARD_PRESENT")}
+                onClick={() => {
+                  setError(null);
+                  setProvingCard(true);
+                }}
                 disabled={pending}
                 className={`${btn} ${reader.paired ? "bg-white text-mondy-ink ring-1 ring-mondy-border hover:bg-mondy-cream" : "bg-mondy-ink text-white hover:bg-black"}`}
               >
@@ -398,6 +406,23 @@ function OrderCard({
           </div>
         )}
       </div>
+      {provingCard && (
+        <div role="dialog" aria-modal="true" aria-label={`Card payment for ${order.code}`} className="fixed inset-0 z-50 flex items-center justify-center bg-mondy-ink/60 p-4">
+          <div className="w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <p className="px-6 pt-5 text-center text-sm text-mondy-muted">
+              Order <b className="text-mondy-ink">{order.code}</b> · {order.customerName}
+            </p>
+            <PaymentProof
+              method="CARD_PRESENT"
+              total={order.total}
+              pending={pending}
+              error={error}
+              onBack={() => setProvingCard(false)}
+              onSubmit={(v) => pickUp("CARD_PRESENT", v)}
+            />
+          </div>
+        </div>
+      )}
       {charging && (
         <ReaderPayment
           order={{ id: order.id, code: order.code, customerName: order.customerName, total: order.total }}

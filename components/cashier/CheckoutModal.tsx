@@ -12,6 +12,7 @@ import {
 import { useCart } from "./CartContext";
 import { formatMoney } from "@/lib/money";
 import { submitCheckout } from "@/app/api/orders/actions";
+import { PaymentProof, type Verification } from "./PaymentProof";
 
 type Props = {
   staffId: string;
@@ -84,6 +85,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
     method: Method;
     tendered: number | null;
     changeGiven: number | null;
+    verification?: Verification;
   }) {
     setError(null);
     startTransition(async () => {
@@ -126,6 +128,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
           amount: total,
           tendered: paymentDetails.tendered,
           changeGiven: paymentDetails.changeGiven,
+          verification: paymentDetails.verification,
         },
       });
 
@@ -150,12 +153,13 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
     });
   }
 
-  function handleCardConfirm() {
+  function handleCardConfirm(verification: Verification) {
     if (!method) return;
     submitOrder({
       method,
       tendered: null,
       changeGiven: null,
+      verification,
     });
   }
 
@@ -492,42 +496,19 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
           </div>
         )}
 
-        {/* Card confirm */}
-        {step === "card-confirm" && (
-          <div className="p-6">
-            <div className="rounded-xl bg-mondy-yellow-soft/40 p-4 ring-1 ring-mondy-yellow-deep/30">
-              <p className="font-display text-base text-mondy-ink">
-                Run the card on the terminal, then confirm here.
-              </p>
-              <p className="mt-1 font-sans text-xs text-mondy-muted">
-                Future Phase: Epos Now integration will auto-fill this step.
-              </p>
-            </div>
-
-            {error && (
-              <p className="mt-3 font-sans text-xs text-mondy-red-dark">
-                {error}
-              </p>
-            )}
-
-            <div className="mt-5 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setStep("method")}
-                className="rounded-xl border border-mondy-border bg-white px-4 py-3 font-sans text-sm font-medium text-mondy-ink hover:bg-mondy-cream"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={handleCardConfirm}
-                disabled={isPending}
-                className="flex-1 rounded-xl bg-mondy-red px-4 py-3 font-display text-base font-semibold text-white shadow-sm hover:bg-mondy-red-dark active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-mondy-muted/40 disabled:shadow-none"
-              >
-                {isPending ? "Recording…" : `Confirm ${formatMoney(total)} paid`}
-              </button>
-            </div>
-          </div>
+        {/* Card / other: proven by Clover or a manager PIN */}
+        {step === "card-confirm" && method && (
+          <PaymentProof
+            method={method}
+            total={total}
+            pending={isPending}
+            error={error}
+            onBack={() => {
+              setError(null);
+              setStep("method");
+            }}
+            onSubmit={handleCardConfirm}
+          />
         )}
 
         {/* Success */}

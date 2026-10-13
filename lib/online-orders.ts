@@ -557,6 +557,7 @@ export async function markOnlinePickedUp(
   orderId: string,
   staffId: string,
   paidWith: "CASH" | "CARD_PRESENT" | null,
+  proof: { ref: string; last4: string | null; brand: string | null } | null = null,
 ): Promise<void> {
   await prisma.$transaction(async (tx: Tx) => {
     const order = await tx.order.findFirst({
@@ -578,10 +579,20 @@ export async function markOnlinePickedUp(
       if (!shift && paidWith === "CASH") {
         throw new OnlineOrderError("Open your shift before taking cash");
       }
+      if (paidWith !== "CASH" && !proof) throw new OnlineOrderError("This card payment hasn't been confirmed");
+      if (proof?.ref.startsWith("clover-pay:")) {
+        const taken = await tx.payment.findFirst({ where: { processorRef: proof.ref }, select: { id: true } });
+        if (taken) throw new OnlineOrderError("That Clover payment was already used for another sale");
+      }
       shiftId = shift?.id ?? null;
       await tx.payment.update({
         where: { id: payment.id },
-        data: { method: paidWith, status: "COMPLETED", processedAt: new Date() },
+        data: {
+          method: paidWith,
+          status: "COMPLETED",
+          processedAt: new Date(),
+          ...(proof ? { processorRef: proof.ref, cardLast4: proof.last4, cardBrand: proof.brand } : {}),
+        },
       });
     }
 

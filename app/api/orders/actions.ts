@@ -12,6 +12,8 @@ import { verifySession } from "@/lib/session";
 import { isOrderable, weekdayIn } from "@/lib/menu-visibility";
 import { checkSelection } from "@/lib/options";
 import { loadOptionGroups } from "@/lib/options-db";
+import { cloverLookupEnabled, findDevicePayments, verifyDevicePayment, type DevicePayment } from "@/lib/clover";
+import { checkManagerPin } from "@/lib/manager-pin";
 
 export async function logoutAndRedirect() {
   const c = await cookies();
@@ -42,7 +44,17 @@ const PaymentInputSchema = z.object({
   changeGiven: z.number().nullable().optional(),
   cardLast4: z.string().optional().nullable(),
   cardBrand: z.string().optional().nullable(),
+  // Proof for anything that isn't cash: the Clover payment, or a manager's PIN.
+  verification: z
+    .union([
+      z.object({ kind: z.literal("clover"), paymentId: z.string().min(6).max(20) }),
+      z.object({ kind: z.literal("manager"), pin: z.string().max(8) }),
+    ])
+    .optional(),
 });
+
+/** Paid through the Clover device, so Clover can confirm them. */
+const CLOVER_METHODS = new Set(["CARD_PRESENT", "CARD_MANUAL", "MOBILE_WALLET"]);
 
 const LineInputSchema = z.object({
   menuItemId: z.string(),
@@ -134,8 +146,34 @@ export async function submitCheckout(input: CheckoutInput) {
     }
   }
 
+  // Non-cash payments must be proven: Clover shows the payment, or a manager
+  // approves with their PIN. A cashier can't just tap "paid".
+  let proof: { ref: string; last4: string | null; brand: string | null } | null = null;
+  if (data.payment.method !== "CASH") {
+    const v = data.payment.verification;
+    if (!v) return { ok: false as const, error: "This payment hasn't been confirmed yet" };
+    if (v.kind === "clover") {
+      if (!CLOVER_METHODS.has(data.payment.method)) {
+        return { ok: false as const, error: "Only card payments can be confirmed with Clover" };
+      }
+      const r = await verifyDevicePayment(v.paymentId, Math.round(data.total * 100));
+      if (!r.ok) return { ok: false as const, error: r.error };
+      proof = { ref: r.ref, last4: r.last4, brand: r.brand };
+    } else {
+      const m = await checkManagerPin(v.pin, session.staffId);
+      if (!m.ok) return { ok: false as const, error: m.error };
+      proof = { ref: `approved-by:${m.name}`.slice(0, 60), last4: null, brand: null };
+    }
+  }
+
   try {
     const order = await prisma.$transaction(async (tx) => {
+      // A Clover payment can only pay for one sale.
+      if (proof?.ref.startsWith("clover-pay:")) {
+        const taken = await tx.payment.findFirst({ where: { processorRef: proof.ref }, select: { id: true } });
+        if (taken) throw new Error("That Clover payment was already used for another sale");
+      }
+
       // 0. Refuse items that were sold out, hidden, or taken off today's
       // schedule after this register loaded its menu (another device may
       // have changed it).
@@ -268,8 +306,9 @@ export async function submitCheckout(input: CheckoutInput) {
           amount: data.payment.amount,
           tendered: data.payment.tendered ?? null,
           changeGiven: data.payment.changeGiven ?? null,
-          cardLast4: data.payment.cardLast4 ?? null,
-          cardBrand: data.payment.cardBrand ?? null,
+          cardLast4: proof?.last4 ?? data.payment.cardLast4 ?? null,
+          cardBrand: proof?.brand ?? data.payment.cardBrand ?? null,
+          processorRef: proof?.ref ?? null,
         },
       });
 
@@ -499,4 +538,19 @@ export async function closeShift(
     closingCash: parsed.data.closingCash,
     variance,
   };
+}
+/**
+ * Card step on the register: approved Clover payments for exactly this total
+ * in the last 30 minutes that no other sale has used. `enabled: false` means
+ * Clover isn't connected, so only a manager can approve card sales.
+ */
+export async function findCardPaymentForSale(
+  total: number,
+): Promise<{ enabled: boolean; payments: DevicePayment[]; error?: string }> {
+  await requireSession();
+  if (!Number.isFinite(total) || total <= 0 || total > 100000) return { enabled: true, payments: [], error: "Invalid total" };
+  if (!cloverLookupEnabled()) return { enabled: false, payments: [] };
+  const found = await findDevicePayments(Math.round(total * 100));
+  if (found === null) return { enabled: true, payments: [], error: "Couldn't reach Clover. Check the internet and try again." };
+  return { enabled: true, payments: found.slice(0, 3) };
 }
