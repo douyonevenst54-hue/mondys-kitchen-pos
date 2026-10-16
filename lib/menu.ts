@@ -147,6 +147,11 @@ export async function getSettings() {
     businessHours,
     onlinePrepTimeMinutes: settings?.onlinePrepTimeMinutes ?? 20,
     allowPreorders: settings?.allowPreorders ?? true,
+    // Rosewood Rewards
+    loyaltyEnabled: settings?.loyaltyEnabled ?? true,
+    loyaltyPointsPerDollar: settings?.loyaltyPointsPerDollar ?? 1,
+    loyaltyRewardPoints: settings?.loyaltyRewardPoints ?? 100,
+    loyaltyRewardValue: settings ? Number(settings.loyaltyRewardValue) : 5,
     // Sold-out display (false = still show, marked sold out)
     hideSoldOutOnRegister: settings?.hideSoldOutOnRegister ?? false,
     hideSoldOutOnline: settings?.hideSoldOutOnline ?? false,

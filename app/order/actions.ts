@@ -5,6 +5,9 @@ import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { confirmCloverPayments } from "@/lib/clover";
 import { queueOrderNotifications } from "@/lib/notify";
+import { normalizePhone, rewardsFor } from "@/lib/loyalty";
+import { checkPromo } from "@/lib/promotions";
+import { allowHit, clientIp } from "@/lib/rate-limit";
 import {
   MAX_LINES,
   MAX_QTY_PER_LINE,
@@ -48,6 +51,15 @@ const OrderSchema = z.object({
     .nullable()
     .default(null),
   smsOptIn: z.boolean().default(false),
+  promoCode: z
+    .string()
+    .trim()
+    .max(30)
+    .nullable()
+    .default(null)
+    .transform((v) => (v ? v : null)),
+  useReward: z.boolean().default(false),
+  marketingOptIn: z.boolean().default(false),
   // Hidden field real people never fill in. Bots usually do.
   website: z.string().max(0).optional().default(""),
 });
@@ -123,4 +135,34 @@ export async function refreshOnlineOrder(orderId: string): Promise<ClientOrder |
   }
   if (order?.status === "VOIDED") queueOrderNotifications(order.id);
   return forClient(order);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Checkout previews (the order is always re-checked when it's placed)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type RewardsPreview = { enabled: boolean; points: number; rewardPoints: number; rewardValue: number; pointsPerDollar: number };
+
+/** Points for a phone number. Shows only the balance, never a name. */
+export async function previewRewards(phone: string): Promise<RewardsPreview | null> {
+  const p = normalizePhone(typeof phone === "string" ? phone : "");
+  if (!p) return null;
+  if (!(await allowHit(`rw:${await clientIp()}`, 40, 60))) return null;
+  return rewardsFor(p);
+}
+
+export type PromoPreview =
+  | { ok: true; code: string; name: string; type: "PERCENT" | "FIXED_AMOUNT"; value: number; minSubtotal: number | null }
+  | { ok: false; error: string };
+
+export async function previewPromo(code: string, subtotal: number, phone: string): Promise<PromoPreview> {
+  if (typeof code !== "string" || code.length > 30 || typeof subtotal !== "number" || !(subtotal >= 0)) {
+    return { ok: false, error: "Type a promo code" };
+  }
+  if (!(await allowHit(`promo:${await clientIp()}`, 20, 60))) {
+    return { ok: false, error: "Too many tries. Please wait a bit, or call us." };
+  }
+  const r = await checkPromo(code, subtotal, typeof phone === "string" ? phone : null);
+  if (!r.ok) return r;
+  return { ok: true, code: r.code, name: r.name, type: r.type, value: r.value, minSubtotal: r.minSubtotal };
 }

@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
 import { PUBLIC_ORDER_HOSTS } from "@/lib/public-hosts";
+import { reconcileLoyalty } from "@/lib/loyalty";
 
 /**
  * Customer updates for online orders: received, ready for pickup, cancelled.
@@ -35,9 +36,15 @@ export function siteUrl(): string {
   return `https://${host}`;
 }
 
-/** Schedule the check after the response is sent; never throws. */
+/**
+ * Follow-ups after an order changes: customer messages and reward points.
+ * Runs after the response is sent; never throws.
+ */
 export function queueOrderNotifications(orderId: string): void {
-  const run = () => sendOrderNotifications(orderId).catch((e) => console.error("Order notification failed:", e));
+  const run = async () => {
+    await reconcileLoyalty(orderId).catch((e) => console.error("Rewards update failed:", e));
+    await sendOrderNotifications(orderId).catch((e) => console.error("Order notification failed:", e));
+  };
   try {
     after(run);
   } catch {

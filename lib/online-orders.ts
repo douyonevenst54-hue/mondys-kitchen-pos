@@ -9,6 +9,8 @@ import { CloverError, attachCloverSession, createCloverCheckout, getCloverStatus
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
 import { queueOrderNotifications, smsStatus } from "@/lib/notify";
+import { normalizePhone, rewardsFor, upsertCustomer } from "@/lib/loyalty";
+import { checkPromo, type PromoCheck } from "@/lib/promotions";
 import { isForLaterDay, onlineOpenState, pickupDays, restaurantTimeToDate } from "@/lib/online-hours";
 import { isListed, isSoldOut, needsPrice, servedOn, weekdayIn } from "@/lib/menu-visibility";
 import { checkSelection, type OptionGroup } from "@/lib/options";
@@ -33,6 +35,8 @@ export type OrderFix =
   | { kind: "lower"; menuItemId: string; name: string; left: number }
   | { kind: "time" }
   | { kind: "pay-online" }
+  | { kind: "promo" }
+  | { kind: "reward" }
   | { kind: "call" };
 
 export class OnlineOrderError extends Error {
@@ -280,6 +284,12 @@ export type PlaceOrderInput = {
   pickupAt: string | null;
   /** Customer ticked "Text me when it's ready". */
   smsOptIn: boolean;
+  /** Promo code typed at checkout (checked again here). */
+  promoCode: string | null;
+  /** Spend points on the reward. */
+  useReward: boolean;
+  /** "Email me specials" (only with an email). */
+  marketingOptIn: boolean;
   /** https://mondyskitchen.com — where Clover sends the customer back. */
   returnBase: string;
 };
@@ -315,7 +325,32 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
     throw new OnlineOrderError(state.message, days.length ? { kind: "time" } : { kind: "call" });
   }
 
-  const { priced, subtotal, taxAmount, total } = await priceCart(input.lines, settings.taxRate, settings.timezone, forDay);
+  const priced0 = await priceCart(input.lines, settings.taxRate, settings.timezone, forDay);
+  const { priced, subtotal } = priced0;
+
+  // Promo code and reward, both re-checked here; the browser only previews them.
+  let promo: Extract<PromoCheck, { ok: true }> | null = null;
+  if (input.promoCode) {
+    const p = await checkPromo(input.promoCode, subtotal, input.customerPhone);
+    if (!p.ok) throw new OnlineOrderError(p.error, { kind: "promo" });
+    promo = p;
+  }
+  let rewardAmount = 0;
+  let pointsRedeemed = 0;
+  if (input.useReward) {
+    const r = await rewardsFor(input.customerPhone);
+    if (!r.enabled) throw new OnlineOrderError("Rewards are paused right now.", { kind: "reward" });
+    if (r.points < r.rewardPoints) {
+      throw new OnlineOrderError(`You need ${r.rewardPoints} points for a reward; this phone number has ${r.points}.`, { kind: "reward" });
+    }
+    rewardAmount = Math.round(Math.min(r.rewardValue, subtotal - (promo?.amount ?? 0)) * 100) / 100;
+    pointsRedeemed = r.rewardPoints;
+  }
+  const discountAmount = Math.round(((promo?.amount ?? 0) + rewardAmount) * 100) / 100;
+  // Same rule as the register: tax on food after discounts.
+  const taxAmount = Math.round((subtotal - discountAmount) * settings.taxRate * 100) / 100;
+  const total = Math.round((subtotal - discountAmount + taxAmount) * 100) / 100;
+  if (total <= 0) throw new OnlineOrderError("Add a little more to your order to use that discount.", { kind: "promo" });
 
   if (input.payment === "pickup" && total > PAY_AT_PICKUP_LIMIT) {
     throw new OnlineOrderError(`Orders over $${PAY_AT_PICKUP_LIMIT} need to be paid online.`, { kind: "pay-online" });
@@ -329,9 +364,21 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
 
   const order = await withUniqueConfirmationCode((code) =>
     prisma.$transaction(async (tx) => {
+      const phone = normalizePhone(input.customerPhone);
+      const customerId = phone
+        ? await upsertCustomer(tx, {
+            phone,
+            name: input.customerName,
+            email: input.customerEmail,
+            marketingOptIn: input.marketingOptIn,
+          })
+        : null;
       const created = await tx.order.create({
         data: {
           staffId,
+          customerId,
+          pointsRedeemed,
+          discountAmount,
           orderType: "TAKEOUT",
           source: "ONLINE_PICKUP",
           // Card orders stay OPEN (invisible to the kitchen) until Stripe
@@ -359,6 +406,11 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
         },
         select: { id: true, onlineConfirmationCode: true },
       });
+      if (promo) {
+        await tx.orderDiscount.create({
+          data: { orderId: created.id, discountId: promo.id, amountApplied: promo.amount, appliedByStaffId: staffId },
+        });
+      }
 
       // Pre-orders for another day don't use up today's portion counts.
       if (!isCard && forDay.today) {
@@ -525,6 +577,7 @@ export type PublicOrder = {
   payment: { method: string; status: string } | null;
   items: { name: string; quantity: number; notes: string | null; lineTotal: number }[];
   subtotal: number;
+  discountAmount: number;
   taxAmount: number;
   total: number;
   stripePaymentIntentId: string | null;
@@ -556,6 +609,7 @@ export async function getPublicOrder(orderId: string): Promise<PublicOrder | nul
       lineTotal: Number(i.lineTotal),
     })),
     subtotal: Number(o.subtotal),
+    discountAmount: Number(o.discountAmount),
     taxAmount: Number(o.taxAmount),
     total: Number(o.total),
     stripePaymentIntentId: o.stripePaymentIntentId,
@@ -686,4 +740,5 @@ export async function markOnlinePickedUp(
       data: { status: "COMPLETED", completedAt: new Date(), shiftId },
     });
   });
+  queueOrderNotifications(orderId); // reward points for the pickup
 }

@@ -7,6 +7,7 @@ import { getCloverStatus } from "@/lib/clover";
 import { getLiveAnnouncements } from "@/lib/announcements";
 import { pickupDays } from "@/lib/online-hours";
 import { smsStatus } from "@/lib/notify";
+import { activeBanners } from "@/lib/promotions";
 import { OnlineOrderApp } from "@/components/online/OnlineOrderApp";
 
 export const metadata: Metadata = {
@@ -18,7 +19,7 @@ export default async function OrderPage() {
   // Menu and open/closed state must be live, never a build-time snapshot.
   await connection();
   const [menu, { settings, state }] = await Promise.all([getOnlineMenu(), getOnlineStatus()]);
-  const clubPosts = await getLiveAnnouncements(settings.timezone);
+  const [clubPosts, promos] = await Promise.all([getLiveAnnouncements(settings.timezone), activeBanners()]);
   const card = getCardStatus();
   // The restaurant's Clover account comes first; Stripe is the fallback.
   const cardProvider = getCloverStatus().enabled ? "clover" : card.enabled ? "stripe" : null;
@@ -52,6 +53,7 @@ export default async function OrderPage() {
       clubPosts={clubPosts}
       pickupDays={days}
       textUpdates={smsStatus().enabled}
+      promos={promos}
     />
   );
 }

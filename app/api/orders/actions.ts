@@ -14,6 +14,7 @@ import { checkSelection } from "@/lib/options";
 import { loadOptionGroups } from "@/lib/options-db";
 import { cloverLookupEnabled, findDevicePayments, verifyDevicePayment, type DevicePayment } from "@/lib/clover";
 import { checkManagerPin } from "@/lib/manager-pin";
+import { queueOrderNotifications } from "@/lib/notify";
 
 export async function logoutAndRedirect() {
   const c = await cookies();
@@ -233,6 +234,23 @@ export async function submitCheckout(input: CheckoutInput) {
         throw new Error("The order total doesn't match the menu prices. Refresh the register and try again.");
       }
 
+      // 0c. Rewards: the customer must still have the points.
+      let reward: { customerId: string; points: number } | null = null;
+      if (data.discount?.id.startsWith("reward-")) {
+        const ls = await tx.restaurantSettings.findFirst({
+          select: { loyaltyEnabled: true, loyaltyRewardPoints: true, loyaltyRewardValue: true },
+        });
+        const cust = await tx.customer.findUnique({ where: { id: data.discount.id.slice(7) }, select: { id: true, points: true } });
+        if (!ls?.loyaltyEnabled || !cust) throw new Error("Rewards aren't available. Remove the reward and try again.");
+        if (cust.points < ls.loyaltyRewardPoints) {
+          throw new Error(`This customer has ${cust.points} points; a reward needs ${ls.loyaltyRewardPoints}. Remove the reward.`);
+        }
+        if (data.discountAmount > Number(ls.loyaltyRewardValue) + 0.005) {
+          throw new Error("The reward amount changed. Remove it and add it again.");
+        }
+        reward = { customerId: cust.id, points: ls.loyaltyRewardPoints };
+      }
+
       // 1. Find an open shift for this staff (if any) — payments roll into it.
       const openShift = await tx.shift.findFirst({
         where: { staffId: data.staffId, endedAt: null },
@@ -244,6 +262,8 @@ export async function submitCheckout(input: CheckoutInput) {
         data: {
           staffId: data.staffId,
           shiftId: openShift?.id,
+          customerId: reward?.customerId ?? null,
+          pointsRedeemed: reward?.points ?? 0,
           tableId: data.orderType === "DINE_IN" ? data.tableId : null,
           orderType: data.orderType,
           status: "COMPLETED",
@@ -285,7 +305,12 @@ export async function submitCheckout(input: CheckoutInput) {
       // synthetic ids like "custom-PERCENT-..." that aren't in the Discount
       // table; we skip persisting OrderDiscount for those but keep the
       // discountAmount on the order.
-      if (data.discount && !data.discount.id.startsWith("custom-") && !data.discount.id.startsWith("comp-")) {
+      if (
+        data.discount &&
+        !data.discount.id.startsWith("custom-") &&
+        !data.discount.id.startsWith("comp-") &&
+        !data.discount.id.startsWith("reward-")
+      ) {
         await tx.orderDiscount.create({
           data: {
             orderId: created.id,
@@ -315,6 +340,8 @@ export async function submitCheckout(input: CheckoutInput) {
       return created;
     });
 
+    // Book the reward (and points earned on this sale) after responding.
+    if (order.customerId) queueOrderNotifications(order.id);
     return {
       ok: true as const,
       orderId: order.id,

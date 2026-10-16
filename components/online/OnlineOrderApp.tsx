@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ArrowLeft, Clock, MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import { checkSelection, priceStartsFrom, selectionKey, type OptionGroup } from "@/lib/options";
-import { submitOnlineOrder } from "@/app/order/actions";
+import { previewPromo, previewRewards, submitOnlineOrder, type PromoPreview, type RewardsPreview } from "@/app/order/actions";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { OptionPicker } from "@/components/menu/OptionPicker";
 import { CallButton } from "./CallButton";
@@ -45,6 +45,8 @@ type OrderFix =
   | { kind: "lower"; menuItemId: string; name: string; left: number }
   | { kind: "time" }
   | { kind: "pay-online" }
+  | { kind: "promo" }
+  | { kind: "reward" }
   | { kind: "call" };
 type CheckoutError = { title: string; detail: string; fix: OrderFix | null };
 
@@ -117,6 +119,8 @@ type Props = {
   pickupDays: PickupDay[];
   /** Text-message updates are set up (Twilio). */
   textUpdates: boolean;
+  /** Promotions with a banner ("10% off this weekend"). */
+  promos: { code: string; text: string }[];
 };
 
 type Step =
@@ -138,6 +142,7 @@ export function OnlineOrderApp({
   clubPosts,
   pickupDays,
   textUpdates,
+  promos,
 }: Props) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -169,8 +174,6 @@ export function OnlineOrderApp({
 
   const count = cart.reduce((s, l) => s + l.quantity, 0);
   const subtotal = Math.round(cart.reduce((s, l) => s + l.price * l.quantity, 0) * 100) / 100;
-  const tax = Math.round(subtotal * restaurant.taxRate * 100) / 100;
-  const total = Math.round((subtotal + tax) * 100) / 100;
   const hasSignature = menu.some((c) => c.items.some((i) => i.isSignature));
 
   function add(item: MenuItem, optionIds: string[] = [], summary = "", price = item.price) {
@@ -286,6 +289,14 @@ export function OnlineOrderApp({
           </nav>
 
           <main className="mx-auto max-w-2xl px-5 pb-36 pt-4">
+            {promos.map((p) => (
+              <p key={p.code} className="mb-3 rounded-2xl bg-mondy-ink px-4 py-3 text-center text-sm text-white">
+                <span className="font-semibold">{p.text}</span>{" "}
+                <span className="whitespace-nowrap">
+                  Code <strong className="rounded bg-white/15 px-1.5 py-0.5 tracking-wide">{p.code}</strong> at checkout.
+                </span>
+              </p>
+            ))}
             <ClubCorner posts={clubPosts} />
 
             {menu.length === 0 && (
@@ -466,8 +477,7 @@ export function OnlineOrderApp({
         <Checkout
           cart={cart}
           subtotal={subtotal}
-          tax={tax}
-          total={total}
+          taxRate={restaurant.taxRate}
           open={openState.open}
           canOrder={canOrder}
           closedMessage={openState.open ? "" : openState.message}
@@ -543,8 +553,7 @@ export function OnlineOrderApp({
 function Checkout({
   cart,
   subtotal,
-  tax,
-  total,
+  taxRate,
   open,
   canOrder,
   closedMessage,
@@ -566,8 +575,7 @@ function Checkout({
 }: {
   cart: CartLine[];
   subtotal: number;
-  tax: number;
-  total: number;
+  taxRate: number;
   open: boolean;
   canOrder: boolean;
   closedMessage: string;
@@ -589,6 +597,62 @@ function Checkout({
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  // Promo code and rewards: previews here, re-checked by the server.
+  const [promoInput, setPromoInput] = useState("");
+  const [promo, setPromo] = useState<Extract<PromoPreview, { ok: true }> | null>(null);
+  const [promoMsg, setPromoMsg] = useState<string | null>(null);
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [rewards, setRewards] = useState<RewardsPreview | null>(null);
+  const [useReward, setUseReward] = useState(false);
+  const [specials, setSpecials] = useState(false);
+  const phoneDigits = phone.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+
+  useEffect(() => {
+    if (phoneDigits.length !== 10) {
+      const t = setTimeout(() => {
+        setRewards(null);
+        setUseReward(false);
+      }, 0);
+      return () => clearTimeout(t);
+    }
+    let live = true;
+    const t = setTimeout(async () => {
+      const r = await previewRewards(phoneDigits).catch(() => null);
+      if (live) setRewards(r);
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [phoneDigits]);
+
+  const promoAmt = !promo
+    ? 0
+    : promo.minSubtotal && subtotal < promo.minSubtotal
+      ? 0
+      : Math.round(Math.min(promo.type === "PERCENT" ? (subtotal * promo.value) / 100 : promo.value, subtotal) * 100) / 100;
+  const canReward = Boolean(rewards?.enabled && rewards.points >= rewards.rewardPoints);
+  const rewardAmt =
+    useReward && canReward && rewards ? Math.round(Math.min(rewards.rewardValue, subtotal - promoAmt) * 100) / 100 : 0;
+  const discount = Math.round((promoAmt + rewardAmt) * 100) / 100;
+  const tax = Math.round((subtotal - discount) * taxRate * 100) / 100;
+  const total = Math.round((subtotal - discount + tax) * 100) / 100;
+
+  async function applyPromo() {
+    setPromoMsg(null);
+    setPromoBusy(true);
+    try {
+      const r = await previewPromo(promoInput, subtotal, phoneDigits);
+      if (r.ok) {
+        setPromo(r);
+        setPromoInput("");
+      } else setPromoMsg(r.error);
+    } catch {
+      setPromoMsg("Couldn't check the code. Check your connection and try again.");
+    } finally {
+      setPromoBusy(false);
+    }
+  }
   const [when, setWhen] = useState<"asap" | "later">(open ? "asap" : "later");
   const firstDay = pickupDays.find((d) => d.slots.length > 0);
   const [dayYmd, setDayYmd] = useState(firstDay?.ymd ?? "");
@@ -629,6 +693,8 @@ function Checkout({
     if (fix.kind === "remove") onRemoveItem(fix.menuItemId);
     if (fix.kind === "lower") onLimitItem(fix.menuItemId, fix.left);
     if (fix.kind === "pay-online") setPayment("card");
+    if (fix.kind === "promo") setPromo(null);
+    if (fix.kind === "reward") setUseReward(false);
     if (fix.kind === "time") {
       setWhen("later");
       setTimeout(() => timeRef.current?.focus(), 50);
@@ -655,6 +721,9 @@ function Checkout({
           payment: effectivePayment,
           pickupAt: scheduled && pickupAt ? pickupAt : null,
           smsOptIn: textUpdates && textMe,
+          promoCode: promo?.code ?? null,
+          useReward: useReward && canReward,
+          marketingOptIn: specials && Boolean(email.trim()),
           website,
         });
         if (!res.ok) {
@@ -757,6 +826,32 @@ function Checkout({
               <dt className="text-mondy-muted">Subtotal</dt>
               <dd className="tabular">{formatMoney(subtotal)}</dd>
             </div>
+            {promo && (
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-mondy-muted">
+                  Promo {promo.code}
+                  <button
+                    type="button"
+                    onClick={() => setPromo(null)}
+                    className="ml-2 min-h-8 rounded px-1 text-xs font-semibold text-mondy-red-dark underline"
+                  >
+                    Remove<span className="sr-only"> promo code</span>
+                  </button>
+                </dt>
+                <dd className="tabular text-emerald-800">−{formatMoney(promoAmt)}</dd>
+              </div>
+            )}
+            {promo && promoAmt === 0 && promo.minSubtotal && (
+              <p className="text-xs text-mondy-red-dark">
+                Add {formatMoney(promo.minSubtotal - subtotal)} more to use {promo.code}.
+              </p>
+            )}
+            {rewardAmt > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-mondy-muted">Rewards ({rewards?.rewardPoints} points)</dt>
+                <dd className="tabular text-emerald-800">−{formatMoney(rewardAmt)}</dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="text-mondy-muted">Meals tax</dt>
               <dd className="tabular">{formatMoney(tax)}</dd>
@@ -766,6 +861,45 @@ function Checkout({
               <dd className="tabular">{formatMoney(total)}</dd>
             </div>
           </dl>
+
+          {!promo && (
+            <div className="mt-4 px-1">
+              <label htmlFor="promo" className="text-sm font-medium">
+                Promo code
+              </label>
+              <div className="mt-1.5 flex gap-2">
+                <input
+                  id="promo"
+                  value={promoInput}
+                  onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (promoInput.trim()) void applyPromo();
+                    }
+                  }}
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  maxLength={30}
+                  aria-describedby={promoMsg ? "promo-msg" : undefined}
+                  className="h-12 min-w-0 flex-1 rounded-xl bg-white px-3.5 text-base uppercase ring-1 ring-mondy-border focus:outline-none focus:ring-2 focus:ring-mondy-red/50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void applyPromo()}
+                  disabled={!promoInput.trim() || promoBusy}
+                  className="h-12 rounded-xl bg-mondy-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {promoBusy ? "Checking…" : "Apply"}
+                </button>
+              </div>
+              {promoMsg && (
+                <p id="promo-msg" role="alert" className="mt-1.5 text-sm text-mondy-red-dark">
+                  {promoMsg}
+                </p>
+              )}
+            </div>
+          )}
 
           <form onSubmit={submit} className="mt-8 space-y-4">
             <h3 className="font-display text-xl font-black">Pickup details</h3>
@@ -794,9 +928,34 @@ function Checkout({
                 required
               />
               <span className="mt-1 block text-xs font-normal text-mondy-muted">
-                Only used if we need to reach you about this order.
+                Used for this order and your Rosewood Rewards points.
               </span>
             </label>
+            {rewards?.enabled && (
+              <div className="rounded-2xl bg-mondy-yellow-soft/60 px-4 py-3 text-sm" aria-live="polite">
+                <p className="font-semibold">
+                  Rosewood Rewards: {rewards.points} point{rewards.points === 1 ? "" : "s"}
+                </p>
+                {canReward ? (
+                  <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={useReward}
+                      onChange={(e) => setUseReward(e.target.checked)}
+                      className="h-5 w-5 shrink-0 accent-mondy-red"
+                    />
+                    <span>
+                      Use {rewards.rewardPoints} points for {formatMoney(rewards.rewardValue)} off this order
+                    </span>
+                  </label>
+                ) : (
+                  <p className="mt-0.5 text-mondy-muted">
+                    You&apos;ll earn about {Math.floor(subtotal - discount) * rewards.pointsPerDollar} points when you pick
+                    up this order. {rewards.rewardPoints} points = {formatMoney(rewards.rewardValue)} off.
+                  </p>
+                )}
+              </div>
+            )}
             <label className="block text-sm font-medium">
               Email for order updates <span className="font-normal text-mondy-muted">(optional)</span>
               <input
@@ -807,6 +966,20 @@ function Checkout({
                 autoComplete="email"
               />
             </label>
+            {email.trim() && (
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={specials}
+                  onChange={(e) => setSpecials(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-mondy-red"
+                />
+                <span>
+                  <span className="font-medium">Email me Rosewood specials and PS Club news</span>
+                  <span className="block text-xs text-mondy-muted">A few emails a month at most. Unsubscribe anytime.</span>
+                </span>
+              </label>
+            )}
             {textUpdates && (
               <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm">
                 <input
@@ -1067,6 +1240,10 @@ function explain(message: string, fix: OrderFix | null): CheckoutError {
       };
     case "pay-online":
       return { title: message, detail: "Nothing was charged. Pay now by card to send this order.", fix };
+    case "promo":
+      return { title: message, detail: "Nothing was charged. Remove the code to order at the regular price, or try another code.", fix };
+    case "reward":
+      return { title: message, detail: "Nothing was charged. Order without the reward; you'll still earn points.", fix };
     case "call":
       return {
         title: message,
@@ -1088,7 +1265,12 @@ function fixLabel(fix: OrderFix): string {
       return "Choose another time";
     case "pay-online":
       return "Pay by card instead";
+    case "promo":
+      return "Remove the code";
+    case "reward":
+      return "Order without the reward";
     default:
       return "OK";
   }
 }
+

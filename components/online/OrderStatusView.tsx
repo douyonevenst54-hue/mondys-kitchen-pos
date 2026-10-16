@@ -213,6 +213,12 @@ export function OrderStatusView({
               <dt className="text-mondy-muted">Subtotal</dt>
               <dd className="tabular">{formatMoney(order.subtotal)}</dd>
             </div>
+            {order.discountAmount > 0 && (
+              <div className="flex justify-between">
+                <dt className="text-mondy-muted">Discounts</dt>
+                <dd className="tabular">−{formatMoney(order.discountAmount)}</dd>
+              </div>
+            )}
             <div className="flex justify-between">
               <dt className="text-mondy-muted">Meals tax</dt>
               <dd className="tabular">{formatMoney(order.taxAmount)}</dd>

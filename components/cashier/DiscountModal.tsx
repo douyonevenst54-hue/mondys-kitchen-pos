@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Tag, Percent, DollarSign, Gift, X } from "lucide-react";
+import { Tag, Percent, DollarSign, Gift, Star, X } from "lucide-react";
 import { useCart, type AppliedDiscount } from "./CartContext";
 import { formatMoney } from "@/lib/money";
 import {
   getActiveDiscounts,
+  lookupRegisterRewards,
   verifyManagerPin,
   type ActiveDiscount,
+  type RegisterRewards,
 } from "@/app/api/discounts/actions";
 
 type Props = {
@@ -17,7 +19,7 @@ type Props = {
   onClose: () => void;
 };
 
-type Mode = "list" | "custom-percent" | "custom-amount" | "comp" | "manager-gate";
+type Mode = "list" | "custom-percent" | "custom-amount" | "comp" | "manager-gate" | "rewards";
 
 export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) {
   const { applyDiscount } = useCart();
@@ -31,6 +33,18 @@ export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) 
   const [managerPin, setManagerPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [rwPhone, setRwPhone] = useState("");
+  const [rw, setRw] = useState<Extract<RegisterRewards, { ok: true }> | null>(null);
+
+  function lookUpRewards() {
+    setError(null);
+    setRw(null);
+    startTransition(async () => {
+      const r = await lookupRegisterRewards(rwPhone);
+      if (r.ok) setRw(r);
+      else setError(r.error);
+    });
+  }
 
   const canApplyComp = staffRole === "OWNER" || staffRole === "MANAGER";
 
@@ -156,6 +170,7 @@ export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) 
               {mode === "custom-amount" && "Custom $ off"}
               {mode === "comp" && "Manager comp"}
               {mode === "manager-gate" && "Manager approval"}
+              {mode === "rewards" && "Rosewood Rewards"}
             </h3>
             <p className="mt-1 font-sans text-sm text-mondy-muted tabular">
               Order subtotal: {formatMoney(subtotal)}
@@ -215,7 +230,7 @@ export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) 
 
             <div className="my-2 h-px bg-mondy-border" />
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-4 gap-2">
               <ModeButton
                 icon={<Percent className="h-4 w-4" />}
                 label="% off"
@@ -232,6 +247,16 @@ export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) 
                   setError(null);
                   setCustomValue("");
                   setMode("custom-amount");
+                }}
+              />
+              <ModeButton
+                icon={<Star className="h-4 w-4" />}
+                label="Rewards"
+                onClick={() => {
+                  setError(null);
+                  setRw(null);
+                  setRwPhone("");
+                  setMode("rewards");
                 }}
               />
               <ModeButton
@@ -308,6 +333,67 @@ export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) 
               onBack={() => setMode("list")}
               onConfirm={handleCompSubmit}
               confirmLabel={canApplyComp ? "Apply comp" : "Request approval"}
+            />
+          </div>
+        )}
+
+        {mode === "rewards" && (
+          <div className="space-y-3">
+            <label className="block font-sans text-sm font-medium text-mondy-ink">
+              Customer&apos;s phone
+              <input
+                type="tel"
+                inputMode="tel"
+                value={rwPhone}
+                onChange={(e) => {
+                  setError(null);
+                  setRw(null);
+                  setRwPhone(e.target.value);
+                }}
+                onKeyDown={(e) => e.key === "Enter" && lookUpRewards()}
+                placeholder="(978) 555-0123"
+                className="mt-1 h-12 w-full rounded-xl border border-mondy-border bg-white px-4 font-display text-xl tabular text-mondy-ink focus:outline-none focus:ring-2 focus:ring-mondy-red/40"
+                autoFocus
+              />
+            </label>
+            {rw && (
+              <div className="rounded-xl bg-mondy-cream px-4 py-3 font-sans text-sm">
+                <p className="font-semibold text-mondy-ink">
+                  {rw.name ?? "Customer"}: {rw.points} points
+                </p>
+                <p className="text-mondy-muted">
+                  {rw.customerId && rw.points >= rw.rewardPoints
+                    ? `Can use ${rw.rewardPoints} points for ${formatMoney(rw.rewardValue)} off.`
+                    : `Needs ${rw.rewardPoints} points for a reward. Add their phone after payment so this sale earns points.`}
+                </p>
+              </div>
+            )}
+            {error && <p className="font-sans text-xs text-mondy-red-dark">{error}</p>}
+            <ModalActions
+              onBack={() => setMode("list")}
+              onConfirm={() => {
+                if (!rw) return lookUpRewards();
+                if (!rw.customerId || rw.points < rw.rewardPoints) return;
+                applyDiscount({
+                  id: `reward-${rw.customerId}`,
+                  code: "REWARDS",
+                  name: `Rewards (${rw.rewardPoints} pts)`,
+                  type: "FIXED_AMOUNT",
+                  value: rw.rewardValue,
+                  appliedByStaffId: staffId,
+                });
+                onClose();
+              }}
+              confirmLabel={
+                isPending
+                  ? "Looking up…"
+                  : !rw
+                    ? "Look up points"
+                    : rw.customerId && rw.points >= rw.rewardPoints
+                      ? `Apply ${formatMoney(rw.rewardValue)} reward`
+                      : "Not enough points"
+              }
+              confirmDisabled={isPending || (!rw && rwPhone.replace(/\D/g, "").length < 10) || Boolean(rw && (!rw.customerId || rw.points < rw.rewardPoints))}
             />
           </div>
         )}

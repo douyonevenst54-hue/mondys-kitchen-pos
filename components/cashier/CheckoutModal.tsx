@@ -12,6 +12,7 @@ import {
 import { useCart } from "./CartContext";
 import { formatMoney } from "@/lib/money";
 import { submitCheckout } from "@/app/api/orders/actions";
+import { addRegisterPoints } from "@/app/api/discounts/actions";
 import { PaymentProof, type Verification } from "./PaymentProof";
 
 type Props = {
@@ -66,6 +67,8 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
   const [customTipInput, setCustomTipInput] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [orderNumber, setOrderNumber] = useState<number | null>(null);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const usedReward = Boolean(state.discount?.id.startsWith("reward-"));
   const [isPending, startTransition] = useTransition();
 
   const tenderedNum = parseFloat(tendered) || 0;
@@ -137,6 +140,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
         return;
       }
       setOrderNumber(result.orderNumber);
+      setOrderId(result.orderId);
       setStep("success");
     });
   }
@@ -534,6 +538,13 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
                 ` · ${formatMoney(changeAmount)} change`}
             </p>
 
+            {orderId && !usedReward && <AddPoints orderId={orderId} />}
+            {usedReward && (
+              <p className="mt-4 rounded-xl bg-mondy-cream px-3 py-2 font-sans text-sm text-mondy-ink">
+                Reward used. This sale&apos;s points go on the same phone number.
+              </p>
+            )}
+
             <button
               type="button"
               onClick={handleDone}
@@ -576,5 +587,53 @@ function MethodButton({
         </span>
       )}
     </button>
+  );
+}
+/** "Rewards phone?" after a sale, so walk-in customers earn points too. */
+function AddPoints({ orderId }: { orderId: string }) {
+  const [phone, setPhone] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [pending, startTransition] = useTransition();
+  const done = msg?.ok === true;
+
+  return (
+    <div className="mt-5 rounded-xl bg-mondy-cream p-3 text-left font-sans">
+      <label htmlFor="rewards-phone" className="text-sm font-semibold text-mondy-ink">
+        Rosewood Rewards: customer&apos;s phone (optional)
+      </label>
+      <div className="mt-1.5 flex gap-2">
+        <input
+          id="rewards-phone"
+          type="tel"
+          inputMode="tel"
+          value={phone}
+          disabled={done}
+          onChange={(e) => {
+            setMsg(null);
+            setPhone(e.target.value);
+          }}
+          placeholder="(978) 555-0123"
+          className="h-11 min-w-0 flex-1 rounded-lg border border-mondy-border bg-white px-3 tabular text-mondy-ink"
+        />
+        <button
+          type="button"
+          disabled={done || pending || phone.replace(/\D/g, "").length < 10}
+          onClick={() =>
+            startTransition(async () => {
+              const r = await addRegisterPoints(orderId, phone);
+              setMsg(r.ok ? { ok: true, text: `+${r.earned} points · balance ${r.balance}` } : { ok: false, text: r.error });
+            })
+          }
+          className="h-11 rounded-lg bg-mondy-ink px-3 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {pending ? "Adding…" : "Add points"}
+        </button>
+      </div>
+      {msg && (
+        <p role={msg.ok ? "status" : "alert"} className={`mt-1.5 text-sm ${msg.ok ? "text-emerald-700" : "text-mondy-red-dark"}`}>
+          {msg.text}
+        </p>
+      )}
+    </div>
   );
 }

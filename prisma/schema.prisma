@@ -203,6 +203,10 @@ model Order {
   notifyReadyAt          DateTime?
   notifyCancelledAt      DateTime?
 
+  // Rosewood Rewards (by phone number)
+  customerId             String?
+  pointsRedeemed         Int       @default(0) // points this order spends (reward discount)
+
   staff           Staff             @relation(fields: [staffId], references: [id])
   shift           Shift?            @relation(fields: [shiftId], references: [id])
   table           Table?            @relation(fields: [tableId], references: [id])
@@ -210,7 +214,10 @@ model Order {
   payments        Payment[]
   discounts       OrderDiscount[]
   portionEvents   PortionEvent[]
+  customer        Customer?         @relation(fields: [customerId], references: [id])
+  loyaltyEvents   LoyaltyEvent[]
 
+  @@index([customerId])
   @@index([status])
   @@index([createdAt])
   @@index([staffId])
@@ -274,10 +281,17 @@ model Discount {
   isActive    Boolean       @default(true)
   startsAt    DateTime?
   endsAt      DateTime?
+  // Promotions / coupons
+  online          Boolean   @default(false) // customers can type the code at online checkout
+  minSubtotal     Decimal?  @db.Decimal(10, 2)
+  maxUses         Int?                      // total uses, all customers
+  oncePerCustomer Boolean   @default(false) // by phone number
+  bannerText      String?                   // shown on the online order page while active
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   applications OrderDiscount[]
+  campaigns    Campaign[]
 }
 
 // One order can have multiple stacked discounts (rare but legal — e.g. coupon + comp).
@@ -428,6 +442,11 @@ model RestaurantSettings {
   email               String?
   taxRate             Decimal  @db.Decimal(5, 4) @default(0.07) // MA 6.25% + 0.75% local meals tax
   accountingAccounts  Json?    // QuickBooks account names for the journal export
+  // Rosewood Rewards
+  loyaltyEnabled          Boolean  @default(true)
+  loyaltyPointsPerDollar  Int      @default(1)
+  loyaltyRewardPoints     Int      @default(100)
+  loyaltyRewardValue      Decimal  @db.Decimal(10, 2) @default(5.00)
   currency            String   @default("USD")
   receiptFooter       String?
   logoUrl             String?
@@ -551,4 +570,69 @@ model CustomerMessage {
   createdAt  DateTime    @default(now())
 
   @@index([isHandled, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REWARDS & MARKETING
+// A customer is a phone number. Points move only through LoyaltyEvent rows,
+// so every balance can be explained line by line.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Customer {
+  id             String    @id @default(cuid())
+  phone          String    @unique // 10 digits
+  name           String?
+  email          String?
+  points         Int       @default(0)
+  marketingOptIn Boolean   @default(false) // emails about specials (opted in at checkout)
+  optInAt        DateTime?
+  optOutAt       DateTime?
+  lastOrderAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  orders Order[]
+  events LoyaltyEvent[]
+
+  @@index([email])
+}
+
+enum LoyaltyKind {
+  EARN           // points for a paid, picked-up order
+  REDEEM         // reward used on an order
+  REVERSE_EARN   // order cancelled after earning
+  RETURN_REDEEM  // order cancelled after a reward was used
+  ADJUST         // manager correction
+}
+
+model LoyaltyEvent {
+  id         String      @id @default(cuid())
+  customerId String
+  orderId    String?
+  kind       LoyaltyKind
+  points     Int         // + or -
+  note       String?
+  staffId    String?
+  createdAt  DateTime    @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  order    Order?   @relation(fields: [orderId], references: [id])
+
+  @@unique([orderId, kind]) // each order earns/redeems at most once
+  @@index([customerId])
+}
+
+model Campaign {
+  id          String    @id @default(cuid())
+  subject     String
+  message     String
+  discountId  String?
+  recipients  Int       @default(0)
+  sentCount   Int       @default(0)
+  failedCount Int       @default(0)
+  createdById String
+  createdAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  discount Discount? @relation(fields: [discountId], references: [id])
 }
