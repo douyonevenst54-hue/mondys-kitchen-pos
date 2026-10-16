@@ -8,7 +8,7 @@ import { getStripe, toCents } from "@/lib/stripe";
 import { CloverError, attachCloverSession, createCloverCheckout, getCloverStatus } from "@/lib/clover";
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
-import { onlineOpenState, pickupSlots, restaurantTimeToDate } from "@/lib/online-hours";
+import { isForLaterDay, onlineOpenState, pickupDays, restaurantTimeToDate } from "@/lib/online-hours";
 import { isListed, isSoldOut, needsPrice, servedOn, weekdayIn } from "@/lib/menu-visibility";
 import { checkSelection, type OptionGroup } from "@/lib/options";
 import { loadOptionGroups, optionGroupsInclude, toOptionGroups } from "@/lib/options-db";
@@ -23,7 +23,25 @@ export const MAX_LINES = 30;
 export const LOW_STOCK_HINT = 5;
 
 
-export class OnlineOrderError extends Error {}
+/**
+ * A problem the customer can fix. `fix` tells the checkout what to offer:
+ * remove a dish, lower a quantity, pick another time, or pay another way.
+ */
+export type OrderFix =
+  | { kind: "remove"; menuItemId: string; name: string }
+  | { kind: "lower"; menuItemId: string; name: string; left: number }
+  | { kind: "time" }
+  | { kind: "pay-online" }
+  | { kind: "call" };
+
+export class OnlineOrderError extends Error {
+  constructor(
+    message: string,
+    public readonly fix: OrderFix | null = null,
+  ) {
+    super(message);
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Menu
@@ -126,7 +144,16 @@ type PricedLine = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-async function priceCart(lines: CartLineInput[], taxRate: number, timezone: string) {
+/**
+ * `forDay` = the weekday the food is for. Orders for a later day skip today's
+ * sold-out and portion counts (the kitchen cooks those fresh that day).
+ */
+async function priceCart(
+  lines: CartLineInput[],
+  taxRate: number,
+  timezone: string,
+  forDay: { weekday: number; today: boolean } = { weekday: weekdayIn(timezone), today: true },
+) {
   if (lines.length === 0) throw new OnlineOrderError("Your cart is empty");
   if (lines.length > MAX_LINES) throw new OnlineOrderError("That order is too large to place online. Please call us.");
 
@@ -150,22 +177,29 @@ async function priceCart(lines: CartLineInput[], taxRate: number, timezone: stri
   for (const l of lines) wanted.set(l.menuItemId, (wanted.get(l.menuItemId) ?? 0) + l.quantity);
 
   const now = new Date();
-  const weekday = weekdayIn(timezone);
+  const weekday = forDay.weekday;
+  const dayWord = forDay.today ? "today's" : "that day's";
   for (const [id, qty] of wanted) {
     const item = byId.get(id);
-    if (item && (!item.showOnline || !servedOn(item.serveDays, weekday) || needsPrice(item))) {
-      throw new OnlineOrderError(`${item.name} isn't on today's menu. Remove it to continue.`);
-    }
-    if (!item || !item.isAvailable || (item.availableUntil && item.availableUntil <= now)) {
+    if (!item) {
+      const gone = lines.find((l) => l.menuItemId === id)!;
       throw new OnlineOrderError(
-        item ? `${item.name} just sold out. Remove it to continue.` : "An item in your cart is no longer on the menu.",
+        "A dish in your cart was taken off the menu.",
+        { kind: "remove", menuItemId: gone.menuItemId, name: "that dish" },
       );
+    }
+    const remove = { kind: "remove" as const, menuItemId: item.id, name: item.name };
+    if (!item.showOnline || !servedOn(item.serveDays, weekday) || needsPrice(item)) {
+      throw new OnlineOrderError(`${item.name} isn't on ${dayWord} menu.`, remove);
+    }
+    if (!forDay.today) continue; // future day: today's counts don't apply
+    if (!item.isAvailable || (item.availableUntil && item.availableUntil <= now)) {
+      throw new OnlineOrderError(`${item.name} just sold out.`, remove);
     }
     if (item.portionsLeft !== null && item.portionsLeft < qty) {
       throw new OnlineOrderError(
-        item.portionsLeft <= 0
-          ? `${item.name} just sold out. Remove it to continue.`
-          : `Only ${item.portionsLeft} ${item.name} left. Lower the quantity to continue.`,
+        item.portionsLeft <= 0 ? `${item.name} just sold out.` : `Only ${item.portionsLeft} ${item.name} left.`,
+        item.portionsLeft <= 0 ? remove : { kind: "lower", menuItemId: item.id, name: item.name, left: item.portionsLeft },
       );
     }
   }
@@ -174,7 +208,13 @@ async function priceCart(lines: CartLineInput[], taxRate: number, timezone: stri
   const priced: PricedLine[] = lines.map((l) => {
     const item = byId.get(l.menuItemId)!;
     const sel = checkSelection(groupsByItem.get(item.id) ?? [], l.modifierIds);
-    if (!sel.ok) throw new OnlineOrderError(`${item.name}: ${sel.error}. Update your cart to continue.`);
+    if (!sel.ok) {
+      throw new OnlineOrderError(`The choices for ${item.name} changed (${sel.error.toLowerCase()}).`, {
+        kind: "remove",
+        menuItemId: item.id,
+        name: item.name,
+      });
+    }
     const unitPrice = round2(Number(item.price) + sel.extra);
     return {
       menuItemId: item.id,
@@ -248,28 +288,34 @@ export type PlaceOrderResult =
 
 export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
   const { settings, state } = await getOnlineStatus();
-  if (!state.open) throw new OnlineOrderError(state.message);
-
-  const { priced, subtotal, taxAmount, total } = await priceCart(input.lines, settings.taxRate, settings.timezone);
-
-  if (input.payment === "pickup" && total > PAY_AT_PICKUP_LIMIT) {
-    throw new OnlineOrderError(
-      `Orders over $${PAY_AT_PICKUP_LIMIT} need to be paid online.`,
-    );
+  if (settings.onlineOrderingPaused) {
+    throw new OnlineOrderError(state.open ? "Online ordering is paused." : state.message, { kind: "call" });
   }
 
-  // A chosen pickup time must be one of today's offered times.
+  // A chosen pickup time must be one of the offered times (today, or the
+  // next open day for pre-orders). With ordering closed, only pre-orders.
+  const days = pickupDays({
+    businessHours: settings.businessHours,
+    timezone: settings.timezone,
+    prepMinutes: settings.onlinePrepTimeMinutes,
+    openNow: state.open,
+    allowPreorders: settings.allowPreorders,
+  });
   let scheduledPickupAt: Date | null = null;
+  let forDay = { weekday: weekdayIn(settings.timezone), today: true };
   if (input.pickupAt) {
-    const slots = pickupSlots({
-      businessHours: settings.businessHours as Record<string, string | null> | null,
-      timezone: settings.timezone,
-      prepMinutes: settings.onlinePrepTimeMinutes,
-    });
-    if (!slots.some((s) => s.value === input.pickupAt)) {
-      throw new OnlineOrderError("That pickup time isn't available anymore. Please pick another time.");
-    }
+    const day = days.find((d) => d.slots.some((s) => s.value === input.pickupAt));
+    if (!day) throw new OnlineOrderError("That pickup time isn't available anymore.", { kind: "time" });
     scheduledPickupAt = restaurantTimeToDate(input.pickupAt, settings.timezone);
+    forDay = { weekday: day.weekday, today: day.isToday };
+  } else if (!state.open) {
+    throw new OnlineOrderError(state.message, days.length ? { kind: "time" } : { kind: "call" });
+  }
+
+  const { priced, subtotal, taxAmount, total } = await priceCart(input.lines, settings.taxRate, settings.timezone, forDay);
+
+  if (input.payment === "pickup" && total > PAY_AT_PICKUP_LIMIT) {
+    throw new OnlineOrderError(`Orders over $${PAY_AT_PICKUP_LIMIT} need to be paid online.`, { kind: "pay-online" });
   }
 
   const staffId = await getOnlineStaffId();
@@ -310,13 +356,14 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
         select: { id: true, onlineConfirmationCode: true },
       });
 
-      if (!isCard) {
+      // Pre-orders for another day don't use up today's portion counts.
+      if (!isCard && forDay.today) {
         await sellPortions(tx, priced, staffId, created.id);
       }
       return created;
     }),
   ).catch((e) => {
-    if (e instanceof PortionError) throw new OnlineOrderError(`${e.message}. Update your cart to continue.`);
+    if (e instanceof PortionError) throw new OnlineOrderError(`${e.message}.`, { kind: "call" });
     throw e;
   });
 
@@ -428,7 +475,7 @@ export async function finalizeCardPayment(paymentIntentId: string): Promise<void
         where: { orderId: order.id },
         select: { menuItemId: true, quantity: true },
       });
-      await sellPortions(tx, items, order.staffId, order.id);
+      if (!isForLaterDay(scheduled, settings.timezone)) await sellPortions(tx, items, order.staffId, order.id);
     });
   } catch (e) {
     if (!(e instanceof PortionError)) throw e;
@@ -463,6 +510,7 @@ export type PublicOrder = {
   code: string;
   status: "OPEN" | "SENT" | "READY" | "COMPLETED" | "VOIDED";
   customerName: string | null;
+  createdAt: Date;
   estimatedReadyAt: Date | null;
   scheduledPickupAt: Date | null;
   voidedReason: string | null;
@@ -488,6 +536,7 @@ export async function getPublicOrder(orderId: string): Promise<PublicOrder | nul
     code: o.onlineConfirmationCode ?? "",
     status: o.status,
     customerName: o.customerName,
+    createdAt: o.createdAt,
     estimatedReadyAt: o.estimatedReadyAt,
     scheduledPickupAt: o.scheduledPickupAt,
     voidedReason: o.voidedReason,
@@ -519,6 +568,8 @@ export type QueueOrder = {
   createdAt: Date;
   estimatedReadyAt: Date | null;
   scheduledPickupAt: Date | null;
+  /** Ordered ahead for a later day: listed apart so it doesn't get cooked today. */
+  laterDay: boolean;
   completedAt: Date | null;
   total: number;
   paid: boolean;
@@ -526,6 +577,7 @@ export type QueueOrder = {
 };
 
 export async function getOnlineQueue(): Promise<QueueOrder[]> {
+  const { timezone } = await getSettings();
   const since = new Date(Date.now() - 12 * 60 * 60_000);
   const orders = await prisma.order.findMany({
     where: {
@@ -557,6 +609,7 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
     createdAt: o.createdAt,
     estimatedReadyAt: o.estimatedReadyAt,
     scheduledPickupAt: o.scheduledPickupAt,
+    laterDay: isForLaterDay(o.scheduledPickupAt, timezone),
     completedAt: o.completedAt,
     total: Number(o.total),
     paid: o.payments[0]?.status === "COMPLETED",

@@ -5,7 +5,7 @@ import { resolveLogoUrl } from "@/lib/logo";
 import { getCardStatus } from "@/lib/stripe-config";
 import { getCloverStatus } from "@/lib/clover";
 import { getLiveAnnouncements } from "@/lib/announcements";
-import { pickupSlots } from "@/lib/online-hours";
+import { pickupDays } from "@/lib/online-hours";
 import { OnlineOrderApp } from "@/components/online/OnlineOrderApp";
 
 export const metadata: Metadata = {
@@ -22,13 +22,15 @@ export default async function OrderPage() {
   // The restaurant's Clover account comes first; Stripe is the fallback.
   const cardProvider = getCloverStatus().enabled ? "clover" : card.enabled ? "stripe" : null;
   if (!cardProvider && !card.enabled) console.warn(`Online card payments are off: ${card.problem}`);
-  const slots = state.open
-    ? pickupSlots({
+  const days = settings.onlineOrderingPaused
+    ? []
+    : pickupDays({
         businessHours: settings.businessHours,
         timezone: settings.timezone,
         prepMinutes: settings.onlinePrepTimeMinutes,
-      })
-    : [];
+        openNow: state.open,
+        allowPreorders: settings.allowPreorders,
+      });
 
   return (
     <OnlineOrderApp
@@ -47,7 +49,7 @@ export default async function OrderPage() {
       stripeKey={card.publishableKey}
       logoUrl={resolveLogoUrl()}
       clubPosts={clubPosts}
-      pickupSlots={slots}
+      pickupDays={days}
     />
   );
 }

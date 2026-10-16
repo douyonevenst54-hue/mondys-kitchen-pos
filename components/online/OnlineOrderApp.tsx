@@ -39,6 +39,14 @@ type CartLine = {
 
 type OpenState = { open: true; closesAt: string } | { open: false; message: string };
 type PickupSlot = { value: string; label: string };
+type PickupDay = { ymd: string; label: string; dateLabel: string; isToday: boolean; slots: PickupSlot[] };
+type OrderFix =
+  | { kind: "remove"; menuItemId: string; name: string }
+  | { kind: "lower"; menuItemId: string; name: string; left: number }
+  | { kind: "time" }
+  | { kind: "pay-online" }
+  | { kind: "call" };
+type CheckoutError = { title: string; detail: string; fix: OrderFix | null };
 
 /* The cart is kept on the customer's phone, so a reload, a phone call, or
    going back from the payment page doesn't empty it. */
@@ -106,7 +114,7 @@ type Props = {
   stripeKey: string | null;
   logoUrl: string | null;
   clubPosts: ClubPost[];
-  pickupSlots: PickupSlot[];
+  pickupDays: PickupDay[];
 };
 
 type Step =
@@ -126,20 +134,27 @@ export function OnlineOrderApp({
   stripeKey,
   logoUrl,
   clubPosts,
-  pickupSlots,
+  pickupDays,
 }: Props) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [step, setStep] = useState<Step>({ name: "menu" });
   const [choosing, setChoosing] = useState<MenuItem | null>(null);
   const restored = useRef(false);
+  // Closed right now, but customers can still order ahead for the next open day.
+  const preorderOnly = !openState.open && pickupDays.length > 0;
+  const canOrder = openState.open || preorderOnly;
 
   // Bring back a saved cart after the page loads (never during server render).
   useEffect(() => {
     const t = setTimeout(() => {
       const lines = restoreCart(menu);
       restored.current = true;
-      if (lines.length) setCart(lines);
+      if (lines.length) {
+        setCart(lines);
+        // Coming back from a failed payment: go straight to checkout.
+        if (new URLSearchParams(window.location.search).get("checkout") === "1") setStep({ name: "checkout" });
+      }
     }, 0);
     return () => clearTimeout(t);
   }, [menu]);
@@ -200,7 +215,8 @@ export function OnlineOrderApp({
 
   /** Why a dish can't be added right now (null = it can). */
   function unavailableReason(item: MenuItem): string | null {
-    if (!openState.open) return "Ordering is closed right now";
+    if (!canOrder) return "Ordering is closed right now";
+    if (preorderOnly) return null; // ordering ahead: today's sold-out counts don't apply
     if (item.soldOut) return "Sold out today";
     if (item.lowStock !== null && (qtyInCart.get(item.id) ?? 0) >= item.lowStock) return "That's all we have left";
     return null;
@@ -229,13 +245,15 @@ export function OnlineOrderApp({
 
           <p
             className={`mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${
-              openState.open ? "bg-white text-mondy-ink ring-1 ring-mondy-border" : "bg-mondy-ink text-white"
+              openState.open || preorderOnly ? "bg-white text-mondy-ink ring-1 ring-mondy-border" : "bg-mondy-ink text-white"
             }`}
           >
             <Clock className="h-4 w-4" aria-hidden />
             {openState.open
               ? `Pickup in about ${restaurant.prepMinutes} min${openState.closesAt ? ` · orders until ${openState.closesAt}` : ""}`
-              : openState.message}
+              : preorderOnly
+                ? `Closed now · order ahead for ${pickupDays[0].label.toLowerCase()} from ${pickupDays[0].slots[0].label}`
+                : openState.message}
           </p>
         </div>
       </header>
@@ -297,12 +315,12 @@ export function OnlineOrderApp({
                       <button
                         type="button"
                         onClick={() => onAddTap(item)}
-                        disabled={!openState.open || item.soldOut}
-                        aria-label={item.soldOut ? undefined : `Add ${item.name} to order`}
+                        disabled={!canOrder || (!preorderOnly && item.soldOut)}
+                        aria-label={!preorderOnly && item.soldOut ? undefined : `Add ${item.name} to order`}
                         className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-full bg-mondy-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted"
                       >
                         <Plus className="h-4 w-4" aria-hidden />
-                        {item.soldOut ? "Today's PS is sold out" : "Add to order"}
+                        {!preorderOnly && item.soldOut ? "Today's PS is sold out" : "Add to order"}
                       </button>
                     </div>
                   ))}
@@ -315,12 +333,11 @@ export function OnlineOrderApp({
                   <ul className="divide-y divide-mondy-border/70">
                     {c.items.map((item) => {
                       const inCart = qtyInCart.get(item.id) ?? 0;
-                      const atLimit = item.lowStock !== null && inCart >= item.lowStock;
-                      const disabled = !openState.open || item.soldOut || atLimit;
+                      const disabled = unavailableReason(item) !== null;
                       return (
                         <li key={item.id} className="flex items-start gap-4 py-4">
                           <div className="min-w-0 flex-1">
-                            <p className={`text-[17px] font-bold leading-snug ${item.soldOut ? "text-mondy-muted" : ""}`}>
+                            <p className={`text-[17px] font-bold leading-snug ${item.soldOut && !preorderOnly ? "text-mondy-muted" : ""}`}>
                               {item.menuNumber != null && <span className="tabular">{item.menuNumber}. </span>}
                               {item.isSignature && (
                                 <span className="text-mondy-red" title="Rosewood Signature" aria-label="Rosewood Signature">
@@ -342,8 +359,8 @@ export function OnlineOrderApp({
                                 {priceStartsFrom(item.optionGroups) && <span className="font-normal text-mondy-muted">from </span>}
                                 {formatMoney(item.price)}
                               </span>
-                              {item.soldOut && <span className="text-mondy-muted">Sold out today</span>}
-                              {item.lowStock !== null && (
+                              {item.soldOut && !preorderOnly && <span className="text-mondy-muted">Sold out today</span>}
+                              {item.lowStock !== null && !preorderOnly && (
                                 <span className="font-semibold text-mondy-red">Only {item.lowStock} left</span>
                               )}
                             </p>
@@ -382,7 +399,7 @@ export function OnlineOrderApp({
                                     alt=""
                                     loading="lazy"
                                     decoding="async"
-                                    className={`h-full w-full object-cover ${item.soldOut ? "opacity-50 grayscale" : ""}`}
+                                    className={`h-full w-full object-cover ${item.soldOut && !preorderOnly ? "opacity-50 grayscale" : ""}`}
                                   />
                                 </button>
                                 {addButton}
@@ -449,6 +466,8 @@ export function OnlineOrderApp({
           tax={tax}
           total={total}
           open={openState.open}
+          canOrder={canOrder}
+          closedMessage={openState.open ? "" : openState.message}
           cardEnabled={cardEnabled}
           cardProvider={cardProvider}
           payAtPickupLimit={payAtPickupLimit}
@@ -457,7 +476,21 @@ export function OnlineOrderApp({
           onRemove={removeLine}
           phone={restaurant.phone}
           prepMinutes={restaurant.prepMinutes}
-          pickupSlots={pickupSlots}
+          pickupDays={pickupDays}
+          onRemoveItem={(menuItemId) => setCart((c) => c.filter((l) => l.menuItemId !== menuItemId))}
+          onLimitItem={(menuItemId, left) =>
+            setCart((c) => {
+              let room = left;
+              return c
+                .map((l) => {
+                  if (l.menuItemId !== menuItemId) return l;
+                  const q = Math.min(l.quantity, room);
+                  room -= q;
+                  return { ...l, quantity: q };
+                })
+                .filter((l) => l.quantity > 0);
+            })
+          }
           canAddMore={(l) => {
             const item = menu.flatMap((c) => c.items).find((i) => i.id === l.menuItemId);
             return !!item && l.quantity < 20 && (item.lowStock === null || (qtyInCart.get(item.id) ?? 0) < item.lowStock);
@@ -509,6 +542,8 @@ function Checkout({
   tax,
   total,
   open,
+  canOrder,
+  closedMessage,
   cardEnabled,
   cardProvider,
   payAtPickupLimit,
@@ -518,7 +553,9 @@ function Checkout({
   canAddMore,
   phone: restaurantPhone,
   prepMinutes,
-  pickupSlots,
+  pickupDays,
+  onRemoveItem,
+  onLimitItem,
   onPickupPlaced,
   onCardReady,
 }: {
@@ -527,6 +564,8 @@ function Checkout({
   tax: number;
   total: number;
   open: boolean;
+  canOrder: boolean;
+  closedMessage: string;
   cardEnabled: boolean;
   cardProvider: "clover" | "stripe" | null;
   payAtPickupLimit: number;
@@ -536,20 +575,28 @@ function Checkout({
   canAddMore: (line: CartLine) => boolean;
   phone: string | null;
   prepMinutes: number;
-  pickupSlots: PickupSlot[];
+  pickupDays: PickupDay[];
+  onRemoveItem: (menuItemId: string) => void;
+  onLimitItem: (menuItemId: string, left: number) => void;
   onPickupPlaced: (orderId: string) => void;
   onCardReady: (orderId: string, clientSecret: string, total: number) => void;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [when, setWhen] = useState<"asap" | "later">("asap");
-  const [pickupAt, setPickupAt] = useState(pickupSlots[0]?.value ?? "");
+  const [when, setWhen] = useState<"asap" | "later">(open ? "asap" : "later");
+  const firstDay = pickupDays.find((d) => d.slots.length > 0);
+  const [dayYmd, setDayYmd] = useState(firstDay?.ymd ?? "");
+  const day = pickupDays.find((d) => d.ymd === dayYmd) ?? firstDay;
+  const [pickupAt, setPickupAt] = useState(firstDay?.slots[0]?.value ?? "");
+  const timeRef = useRef<HTMLSelectElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
+  const scheduled = when === "later" || !open;
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [website, setWebsite] = useState("");
   const pickupAllowed = total <= payAtPickupLimit;
   const [payment, setPayment] = useState<"card" | "pickup">(cardEnabled ? "card" : "pickup");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<CheckoutError | null>(null);
   const [pending, startTransition] = useTransition();
   const [leaving, setLeaving] = useState(false);
 
@@ -564,6 +611,23 @@ function Checkout({
     }, 0);
     return () => clearTimeout(t);
   }, []);
+
+  function showError(err: CheckoutError) {
+    setError(err);
+    // Bring the message into view and read it out on screen readers.
+    setTimeout(() => errorRef.current?.focus(), 50);
+  }
+
+  function applyFix(fix: OrderFix) {
+    if (fix.kind === "remove") onRemoveItem(fix.menuItemId);
+    if (fix.kind === "lower") onLimitItem(fix.menuItemId, fix.left);
+    if (fix.kind === "pay-online") setPayment("card");
+    if (fix.kind === "time") {
+      setWhen("later");
+      setTimeout(() => timeRef.current?.focus(), 50);
+    }
+    setError(null);
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -582,11 +646,11 @@ function Checkout({
           customerEmail: email,
           notes,
           payment: effectivePayment,
-          pickupAt: when === "later" && pickupAt ? pickupAt : null,
+          pickupAt: scheduled && pickupAt ? pickupAt : null,
           website,
         });
         if (!res.ok) {
-          setError(res.error);
+          showError(explain(res.error, res.fix ?? null));
           return;
         }
         if (res.kind === "pickup") onPickupPlaced(res.orderId);
@@ -595,7 +659,11 @@ function Checkout({
           window.location.assign(res.href); // Clover's secure payment page
         } else onCardReady(res.orderId, res.clientSecret, res.total);
       } catch {
-        setError("Couldn't reach the restaurant. Check your connection and try again.");
+        showError({
+          title: "We couldn't reach the restaurant",
+          detail: "Your connection may have dropped. Nothing was charged and your cart is saved. Check your signal or Wi-Fi, then tap the button again.",
+          fix: null,
+        });
       }
     });
   }
@@ -757,39 +825,84 @@ function Checkout({
 
             <fieldset>
               <legend className="font-display text-xl font-black">Pickup time</legend>
-              <div className="mt-2 grid gap-2">
-                <PayOption
-                  name="when"
-                  checked={when === "asap"}
-                  onChange={() => setWhen("asap")}
-                  title="As soon as possible"
-                  detail={`Ready in about ${prepMinutes} min`}
-                />
-                <PayOption
-                  name="when"
-                  checked={when === "later"}
-                  onChange={() => setWhen("later")}
-                  disabled={pickupSlots.length === 0}
-                  title="Later today"
-                  detail={pickupSlots.length ? "Choose a time" : "No later times left today"}
-                />
-              </div>
-              {when === "later" && pickupSlots.length > 0 && (
-                <label className="mt-3 block text-sm font-medium">
-                  Pickup at
-                  <select
-                    className={`${field} appearance-auto`}
-                    value={pickupAt}
-                    onChange={(e) => setPickupAt(e.target.value)}
-                    required
-                  >
-                    {pickupSlots.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              {!open && (
+                <p className="mt-1 text-sm text-mondy-muted">
+                  {closedMessage} You can still order now and pick it up at the time you choose.
+                </p>
+              )}
+              {open && (
+                <div className="mt-2 grid gap-2">
+                  <PayOption
+                    name="when"
+                    checked={when === "asap"}
+                    onChange={() => setWhen("asap")}
+                    title="As soon as possible"
+                    detail={`Ready in about ${prepMinutes} min`}
+                  />
+                  <PayOption
+                    name="when"
+                    checked={when === "later"}
+                    onChange={() => setWhen("later")}
+                    disabled={!firstDay}
+                    title="Schedule for later"
+                    detail={
+                      firstDay
+                        ? pickupDays.some((d) => !d.isToday)
+                          ? "Later today or order ahead"
+                          : "Choose a time today"
+                        : "No later times available"
+                    }
+                  />
+                </div>
+              )}
+              {scheduled && day && (
+                <div className="mt-3 space-y-3">
+                  {pickupDays.filter((d) => d.slots.length > 0).length > 1 && (
+                    <div role="radiogroup" aria-label="Pickup day" className="grid grid-cols-2 gap-2">
+                      {pickupDays
+                        .filter((d) => d.slots.length > 0)
+                        .map((d) => (
+                          <button
+                            key={d.ymd}
+                            type="button"
+                            role="radio"
+                            aria-checked={d.ymd === day.ymd}
+                            onClick={() => {
+                              setDayYmd(d.ymd);
+                              setPickupAt(d.slots[0].value);
+                            }}
+                            className={`min-h-12 rounded-2xl bg-white px-3 py-2 text-left ring-1 transition focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 ${
+                              d.ymd === day.ymd ? "ring-2 ring-mondy-red" : "ring-mondy-border"
+                            }`}
+                          >
+                            <span className="block font-semibold">{d.label}</span>
+                            <span className="block text-sm text-mondy-muted">{d.dateLabel}</span>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  <label className="block text-sm font-medium">
+                    Pickup time{!day.isToday || pickupDays.length > 1 ? ` (${day.label.toLowerCase()}, ${day.dateLabel})` : ""}
+                    <select
+                      ref={timeRef}
+                      className={`${field} appearance-auto`}
+                      value={day.slots.some((s) => s.value === pickupAt) ? pickupAt : day.slots[0].value}
+                      onChange={(e) => setPickupAt(e.target.value)}
+                      required
+                    >
+                      {day.slots.map((s) => (
+                        <option key={s.value} value={s.value}>
+                          {s.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {!day.isToday && (
+                    <p className="rounded-xl bg-mondy-yellow-soft/60 px-3.5 py-2.5 text-sm">
+                      This is an order ahead for {day.label.toLowerCase()}. The kitchen starts it shortly before your pickup time.
+                    </p>
+                  )}
+                </div>
               )}
             </fieldset>
 
@@ -821,14 +934,32 @@ function Checkout({
             </fieldset>
 
             {error && (
-              <p role="alert" className="rounded-xl bg-mondy-red/10 px-4 py-3 text-sm text-mondy-red-dark">
-                {error}
-              </p>
+              <div
+                ref={errorRef}
+                tabIndex={-1}
+                role="alert"
+                className="rounded-2xl bg-mondy-red/10 px-4 py-3.5 text-sm text-mondy-ink ring-1 ring-mondy-red/30 focus:outline-none"
+              >
+                <p className="font-semibold text-mondy-red-dark">{error.title}</p>
+                <p className="mt-1 leading-relaxed">{error.detail}</p>
+                {error.fix && error.fix.kind !== "call" && (
+                  <button
+                    type="button"
+                    onClick={() => applyFix(error.fix!)}
+                    className="mt-3 inline-flex min-h-11 items-center rounded-full bg-mondy-ink px-4 font-semibold text-white hover:bg-black focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30"
+                  >
+                    {fixLabel(error.fix)}
+                  </button>
+                )}
+                {error.fix?.kind === "call" && restaurantPhone && (
+                  <CallButton phone={restaurantPhone} className="mt-3" />
+                )}
+              </div>
             )}
 
             <button
               type="submit"
-              disabled={pending || leaving || !open || cart.length === 0}
+              disabled={pending || leaving || !canOrder || cart.length === 0}
               className="w-full rounded-2xl bg-mondy-red px-5 py-4 text-base font-semibold text-white shadow-sm transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:opacity-60"
             >
               {leaving
@@ -887,4 +1018,53 @@ function PayOption({
       </span>
     </label>
   );
+}
+
+/** Turn a server message into "what happened" + "what to do next". */
+function explain(message: string, fix: OrderFix | null): CheckoutError {
+  switch (fix?.kind) {
+    case "remove":
+      return {
+        title: message,
+        detail: "Nothing was charged. Remove it and place your order again; the rest of your cart is saved.",
+        fix,
+      };
+    case "lower":
+      return {
+        title: message,
+        detail: `Nothing was charged. Change it to ${fix.left} and place your order again, or remove it.`,
+        fix,
+      };
+    case "time":
+      return {
+        title: message,
+        detail: "Times fill up or pass while you order. Nothing was charged; pick another time and try again.",
+        fix,
+      };
+    case "pay-online":
+      return { title: message, detail: "Nothing was charged. Pay now by card to send this order.", fix };
+    case "call":
+      return {
+        title: message,
+        detail: "Nothing was charged and your cart is saved. Try again in a minute, or call us and we'll take your order by phone.",
+        fix,
+      };
+    default:
+      return { title: "Please check your order", detail: message, fix: null };
+  }
+}
+
+function fixLabel(fix: OrderFix): string {
+  switch (fix.kind) {
+    case "remove":
+      return `Remove ${fix.name}`;
+    case "lower":
+      return `Change to ${fix.left}`;
+    case "time":
+      return "Choose another time";
+    case "pay-online":
+      return "Pay by card instead";
+    default:
+      return "OK";
+  }
 }

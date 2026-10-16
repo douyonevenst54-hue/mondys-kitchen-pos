@@ -112,6 +112,25 @@ function localParts(tz: string, at: Date) {
   };
 }
 
+function slotsBetween(ymd: string, from: number, to: number): PickupSlot[] {
+  const first = Math.ceil(from / STEP) * STEP;
+  const slots: PickupSlot[] = [];
+  for (let m = first; m <= to; m += STEP) {
+    const hh = String(Math.floor(m / 60)).padStart(2, "0");
+    const mm = String(m % 60).padStart(2, "0");
+    slots.push({ value: `${ymd}T${hh}:${mm}`, label: to12h(`${hh}:${mm}`) });
+  }
+  return slots;
+}
+
+function parseRange(range: string): { open: number; close: number } {
+  const [s, e] = range.split("-");
+  const [sh, sm] = s.split(":").map(Number);
+  const [eh, em] = e.split(":").map(Number);
+  return { open: sh * 60 + sm, close: eh * 60 + em };
+}
+
+/** Today's pickup times, from (now + prep) until closing. */
 export function pickupSlots(opts: {
   businessHours: Record<string, string | null> | null;
   timezone: string;
@@ -124,24 +143,70 @@ export function pickupSlots(opts: {
   if (opts.businessHours) {
     const range = opts.businessHours[now.weekday];
     if (!range) return [];
-    const [s, e] = range.split("-");
-    const [sh, sm] = s.split(":").map(Number);
-    const [eh, em] = e.split(":").map(Number);
-    open = sh * 60 + sm;
-    close = eh * 60 + em;
+    ({ open, close } = parseRange(range));
   } else {
     close = Math.min(close, now.minutes + 8 * 60); // no hours set: up to 8 hours ahead
   }
   // A scheduled time must be later than "as soon as possible".
   const earliest = Math.max(open + opts.prepMinutes, now.minutes + opts.prepMinutes + STEP);
-  const first = Math.ceil(earliest / STEP) * STEP;
-  const slots: PickupSlot[] = [];
-  for (let m = first; m <= close; m += STEP) {
-    const hh = String(Math.floor(m / 60)).padStart(2, "0");
-    const mm = String(m % 60).padStart(2, "0");
-    slots.push({ value: `${now.ymd}T${hh}:${mm}`, label: to12h(`${hh}:${mm}`) });
+  return slotsBetween(now.ymd, earliest, close);
+}
+
+export type PickupDay = {
+  ymd: string; // "2026-10-16"
+  weekday: number; // 0 = Sunday
+  label: string; // "Today", "Tomorrow", "Monday"
+  dateLabel: string; // "Fri, Oct 16"
+  isToday: boolean;
+  slots: PickupSlot[];
+};
+
+/**
+ * Days a customer can pick up: today (while ordering is open) and, when
+ * pre-orders are on, the next day the restaurant opens. Only days with
+ * business hours set get pre-orders, so the kitchen always knows the hours.
+ */
+export function pickupDays(opts: {
+  businessHours: Record<string, string | null> | null;
+  timezone: string;
+  prepMinutes: number;
+  openNow: boolean;
+  allowPreorders: boolean;
+  now?: Date;
+}): PickupDay[] {
+  const at = opts.now ?? new Date();
+  const now = localParts(opts.timezone, at);
+  const [y, m, d] = now.ymd.split("-").map(Number);
+  const dayAt = (offset: number) => {
+    const u = new Date(Date.UTC(y, m - 1, d + offset, 12));
+    const ymd = u.toISOString().slice(0, 10);
+    const weekday = u.getUTCDay();
+    const dateLabel = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(u);
+    return { ymd, weekday, dateLabel };
+  };
+
+  const days: PickupDay[] = [];
+  if (opts.openNow) {
+    const today = dayAt(0);
+    days.push({ ...today, label: "Today", isToday: true, slots: pickupSlots(opts) });
   }
-  return slots;
+  if (opts.allowPreorders && opts.businessHours) {
+    // Before opening, "later today" counts as the pre-order day.
+    for (let i = opts.openNow ? 1 : 0; i <= 7; i++) {
+      const day = dayAt(i);
+      const range = opts.businessHours[DAYS[day.weekday]];
+      if (!range) continue;
+      const { open, close } = parseRange(range);
+      const from = i === 0 ? Math.max(open + opts.prepMinutes, now.minutes + opts.prepMinutes + STEP) : open + opts.prepMinutes;
+      const slots = slotsBetween(day.ymd, from, close);
+      if (!slots.length) continue;
+      const label =
+        i === 0 ? "Today" : i === 1 ? "Tomorrow" : DAYS[day.weekday][0].toUpperCase() + DAYS[day.weekday].slice(1);
+      days.push({ ...day, label, isToday: i === 0, slots });
+      break; // just the next open day
+    }
+  }
+  return days.filter((x) => x.slots.length > 0 || x.isToday);
 }
 
 /** "2026-10-15T13:30" in the restaurant's timezone → the real moment (UTC). */
@@ -159,4 +224,10 @@ export function restaurantTimeToDate(value: string, timezone: string): Date | nu
     guess += target - shown;
   }
   return new Date(guess);
+}
+
+/** True when a pickup time falls on a later calendar day than today (restaurant time). */
+export function isForLaterDay(at: Date | null | undefined, timezone: string, now: Date = new Date()): boolean {
+  if (!at) return false;
+  return localParts(timezone, at).ymd > localParts(timezone, now).ymd;
 }

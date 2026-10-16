@@ -7,6 +7,7 @@ import {
   Power,
   Clock,
   Calendar,
+  CalendarClock,
   CheckCircle2,
   AlertCircle,
   Store,
@@ -16,6 +17,7 @@ import {
   setBusinessHours,
   setOnlinePrepTime,
   setRestaurantDetails,
+  setAllowPreorders,
 } from "@/app/admin/online-settings/actions";
 
 const DAYS = [
@@ -35,6 +37,7 @@ type Props = {
   paused: boolean;
   businessHours: Record<string, string | null> | null;
   prepTimeMinutes: number;
+  allowPreorders: boolean;
   card: CardInfo;
 };
 
@@ -43,6 +46,7 @@ export function OnlineSettingsForm({
   paused: initialPaused,
   businessHours: initialHours,
   prepTimeMinutes: initialPrepTime,
+  allowPreorders,
   card,
 }: Props) {
   return (
@@ -65,6 +69,7 @@ export function OnlineSettingsForm({
         <DetailsSection initial={details} />
         <PauseSection initialPaused={initialPaused} />
         <PrepTimeSection initialPrepTime={initialPrepTime} />
+        <PreorderSection initial={allowPreorders} />
         <HoursSection initialHours={initialHours} />
 
         <p className="px-2 font-sans text-xs leading-relaxed text-mondy-muted">
@@ -261,6 +266,61 @@ function PauseSection({ initialPaused }: { initialPaused: boolean }) {
             : paused
               ? "Resume orders"
               : "Pause orders"}
+        </button>
+      </div>
+      {message && <StatusMessage message={message} />}
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Order ahead
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PreorderSection({ initial }: { initial: boolean }) {
+  const [on, setOn] = useState(initial);
+  const [isPending, startTransition] = useTransition();
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  function toggle() {
+    const next = !on;
+    setMessage(null);
+    startTransition(async () => {
+      const r = await setAllowPreorders(next);
+      if (r.ok) {
+        setOn(next);
+        setMessage({ type: "success", text: next ? "Order ahead is on" : "Order ahead is off" });
+      } else setMessage({ type: "error", text: r.error });
+    });
+  }
+
+  return (
+    <section className="rounded-2xl bg-white p-5 ring-1 ring-mondy-border">
+      <div className="flex items-start gap-3">
+        <span aria-hidden className="grid h-10 w-10 place-items-center rounded-xl bg-mondy-yellow-soft text-mondy-red-dark">
+          <CalendarClock className="h-5 w-5" />
+        </span>
+        <div className="flex-1">
+          <p className="font-sans text-[11px] uppercase tracking-[0.22em] text-mondy-red-dark">Order ahead</p>
+          <p className="mt-0.5 font-display text-lg font-semibold text-mondy-ink">
+            {on ? "Customers can order for the next open day" : "Today only"}
+          </p>
+          <p className="mt-1 font-sans text-xs text-mondy-muted">
+            Even after closing, customers can order for tomorrow (or the next day you&rsquo;re open), using the
+            business hours below. These orders show under &ldquo;Ordered ahead&rdquo; and don&rsquo;t use up
+            today&rsquo;s portion counts.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-label="Allow order ahead"
+          onClick={toggle}
+          disabled={isPending}
+          className={`relative h-8 w-14 shrink-0 rounded-full transition disabled:opacity-60 ${on ? "bg-emerald-600" : "bg-mondy-border"}`}
+        >
+          <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${on ? "left-7" : "left-1"}`} />
         </button>
       </div>
       {message && <StatusMessage message={message} />}

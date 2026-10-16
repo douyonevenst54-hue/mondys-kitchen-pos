@@ -423,6 +423,7 @@ model RestaurantSettings {
   onlineOrderingPaused    Boolean  @default(false)
   businessHours           Json?    // { "monday": "11:00-21:00", "tuesday": null, ... }
   onlinePrepTimeMinutes   Int      @default(20)
+  allowPreorders          Boolean  @default(true) // customers can order ahead for the next open day
   hideSoldOutOnRegister   Boolean  @default(false) // false = show greyed out with "Sold out"
   hideSoldOutOnline       Boolean  @default(false) // false = show as "Sold out today"
   // Stripe card reader on the counter (WisePOS E / S700), paired from Card reader settings

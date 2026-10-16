@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
 import { PortionError, sellPortions } from "@/lib/portions";
+import { isForLaterDay } from "@/lib/online-hours";
 
 /**
  * Online card payments through Clover Hosted Checkout.
@@ -203,7 +204,7 @@ export async function completeCloverOrder(orderId: string, proof: string): Promi
     let soldOutNote: string | null = null;
     try {
       await tx.$executeRaw`SAVEPOINT portions`;
-      await sellPortions(tx, items, payment.order.staffId, orderId);
+      if (!isForLaterDay(scheduled, settings.timezone)) await sellPortions(tx, items, payment.order.staffId, orderId);
     } catch (e) {
       if (!(e instanceof PortionError)) throw e;
       // Paid already: still send it, and tell the team to call the customer.

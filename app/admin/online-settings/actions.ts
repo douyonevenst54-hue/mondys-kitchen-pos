@@ -180,3 +180,17 @@ export async function setRestaurantDetails(input: { phone: string; address: stri
   revalidatePath("/order");
   return { ok: true as const, ...parsed.data };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Order ahead: customers order for the next open day (also while closed)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function setAllowPreorders(allow: boolean) {
+  await requireManagerOrOwner();
+  const settings = await prisma.restaurantSettings.findFirst();
+  if (!settings) return { ok: false as const, error: "Settings not found" };
+  await prisma.restaurantSettings.update({ where: { id: settings.id }, data: { allowPreorders: allow === true } });
+  revalidatePath("/admin/online-settings");
+  revalidatePath("/order");
+  return { ok: true as const };
+}

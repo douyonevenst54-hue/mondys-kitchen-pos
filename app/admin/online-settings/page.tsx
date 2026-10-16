@@ -36,6 +36,7 @@ export default async function OnlineSettingsPage() {
       paused={settings.onlineOrderingPaused}
       businessHours={settings.businessHours}
       prepTimeMinutes={settings.onlinePrepTimeMinutes}
+      allowPreorders={settings.allowPreorders}
       card={
         clover.enabled
           ? { provider: "Clover", enabled: true, mode: clover.env === "sandbox" ? "test" : "live", problem: null, webhook: clover.webhook }

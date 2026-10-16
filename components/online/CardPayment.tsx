@@ -68,7 +68,14 @@ function PayForm({ orderId, total }: { orderId: string; total: number }) {
     });
     // Only reached if the payment failed or needs fixing; success redirects.
     if (stripeError) {
-      setError(stripeError.message ?? "Your card couldn't be charged. Try another card.");
+      // Card problems (declined, wrong number…) can be fixed right here.
+      const fixable = stripeError.type === "card_error" || stripeError.type === "validation_error";
+      setError(
+        `${stripeError.message ?? "Your card couldn't be charged."} No money was taken. ` +
+          (fixable
+            ? "Check the card details or try another card."
+            : "Try again in a moment, or call us to order by phone."),
+      );
     }
     setSubmitting(false);
   }

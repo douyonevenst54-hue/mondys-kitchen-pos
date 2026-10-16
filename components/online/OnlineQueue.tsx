@@ -89,7 +89,12 @@ export function OnlineQueue({
   // Soonest due first, so a 6 PM pre-order doesn't push lunch orders down.
   const dueAt = (o: (typeof orders)[number]) =>
     new Date(o.scheduledPickupAt ?? o.estimatedReadyAt ?? o.createdAt).getTime();
-  const toMake = orders.filter((o) => o.status === "SENT").sort((x, y) => dueAt(x) - dueAt(y));
+  const toMake = orders.filter((o) => o.status === "SENT" && !o.laterDay).sort((x, y) => dueAt(x) - dueAt(y));
+  const ahead = orders.filter((o) => o.status === "SENT" && o.laterDay).sort((x, y) => dueAt(x) - dueAt(y));
+  const dayOf = (d: Date | string) =>
+    new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: timezone }).format(
+      new Date(d),
+    );
   const ready = orders.filter((o) => o.status === "READY");
   const done = orders.filter((o) => o.status === "COMPLETED").reverse();
   const waiting = orders.filter((o) => o.status === "OPEN");
@@ -216,6 +221,31 @@ export function OnlineQueue({
           ))}
         </Column>
       </div>
+
+      {ahead.length > 0 && (
+        <section className="mx-auto max-w-5xl px-4 pb-6 sm:px-6" aria-labelledby="ahead-title">
+          <h2 id="ahead-title" className="font-display text-lg font-bold">
+            Ordered ahead ({ahead.length})
+          </h2>
+          <p className="text-sm text-mondy-muted">For another day. Don&apos;t cook yet; they move to To make on their day.</p>
+          <ul className="mt-2 divide-y divide-mondy-border rounded-xl bg-white font-sans text-sm ring-1 ring-mondy-border">
+            {ahead.map((o) => (
+              <li key={o.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                <span>
+                  <span className="font-semibold tabular">{o.code}</span>{" "}
+                  <span className="text-mondy-muted">{o.customerName}</span>
+                  <span className="block text-mondy-muted">
+                    {o.items.map((i) => `${i.quantity}× ${i.name}`).join(", ")}
+                  </span>
+                </span>
+                <span className="rounded-full bg-mondy-yellow px-2 py-0.5 font-bold">
+                  {o.scheduledPickupAt ? `${dayOf(o.scheduledPickupAt)} · ${time(o.scheduledPickupAt)}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {done.length > 0 && (
         <section className="mx-auto max-w-5xl px-4 pb-12 sm:px-6">

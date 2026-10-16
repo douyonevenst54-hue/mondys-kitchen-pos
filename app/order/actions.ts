@@ -11,6 +11,7 @@ import {
   finalizeCardPayment,
   getPublicOrder,
   placeOnlineOrder,
+  type OrderFix,
   type PublicOrder,
 } from "@/lib/online-orders";
 
@@ -55,7 +56,7 @@ export type SubmitOrderResult =
   | { ok: true; kind: "card"; orderId: string; clientSecret: string; total: number }
   | { ok: true; kind: "pickup"; orderId: string }
   | { ok: true; kind: "redirect"; orderId: string; href: string }
-  | { ok: false; error: string };
+  | { ok: false; error: string; fix?: OrderFix | null };
 
 export async function submitOnlineOrder(input: SubmitOrderInput): Promise<SubmitOrderResult> {
   const parsed = OrderSchema.safeParse(input);
@@ -76,9 +77,13 @@ export async function submitOnlineOrder(input: SubmitOrderInput): Promise<Submit
     }
     return { ok: true, ...res };
   } catch (e) {
-    if (e instanceof OnlineOrderError) return { ok: false, error: e.message };
+    if (e instanceof OnlineOrderError) return { ok: false, error: e.message, fix: e.fix };
     console.error("Online order failed:", e);
-    return { ok: false, error: "Something went wrong placing your order. Please try again or call us." };
+    return {
+      ok: false,
+      error: "Something went wrong on our side while placing your order.",
+      fix: { kind: "call" },
+    };
   }
 }
 

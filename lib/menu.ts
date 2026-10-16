@@ -146,6 +146,7 @@ export async function getSettings() {
     onlineOrderingPaused: settings?.onlineOrderingPaused ?? false,
     businessHours,
     onlinePrepTimeMinutes: settings?.onlinePrepTimeMinutes ?? 20,
+    allowPreorders: settings?.allowPreorders ?? true,
     // Sold-out display (false = still show, marked sold out)
     hideSoldOutOnRegister: settings?.hideSoldOutOnRegister ?? false,
     hideSoldOutOnline: settings?.hideSoldOutOnline ?? false,

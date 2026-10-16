@@ -26,6 +26,7 @@ export function OrderStatusView({
   paymentNote?: "failed" | "cancelled" | null;
 }) {
   const [order, setOrder] = useState(initial);
+  const [slow, setSlow] = useState(false);
   const finished = order.status === "COMPLETED" || order.status === "VOIDED";
 
   // The order reached the kitchen: the saved cart on this phone is done with.
@@ -38,6 +39,13 @@ export function OrderStatusView({
       /* storage blocked */
     }
   }, [order.status]);
+
+  // Card confirmation normally takes seconds. After 2 minutes, say what to do.
+  useEffect(() => {
+    if (order.status !== "OPEN" || paymentNote) return;
+    const t = setTimeout(() => setSlow(true), 120_000);
+    return () => clearTimeout(t);
+  }, [order.status, paymentNote]);
 
   useEffect(() => {
     if (finished) return;
@@ -56,6 +64,14 @@ export function OrderStatusView({
     new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: timezone }).format(
       new Date(d),
     );
+  const dayOf = (d: Date | string) =>
+    new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: timezone }).format(
+      new Date(d),
+    );
+  // "Fri, Oct 16 at 9:00 AM" for an order ahead, "9:00 AM" for the same day.
+  const pickupWhen = (d: Date | string) =>
+    dayOf(d) !== dayOf(order.createdAt) ? `${dayOf(d)} at ${time(d)}` : time(d);
+  const paidByCard = order.payment?.method === "STRIPE_ONLINE" || order.payment?.method === "CLOVER_ONLINE";
 
   const reached = STEPS.findIndex((s) => s.key === order.status);
   const payAtCounter =
@@ -66,13 +82,18 @@ export function OrderStatusView({
   const unpaid = order.status === "OPEN" && paymentNote !== null;
   if (unpaid) {
     headline = paymentNote === "cancelled" ? "Payment cancelled" : "Your payment didn't go through";
-    sub = "No money was taken and the kitchen didn't get this order. Order again, or choose pay at pickup.";
+    sub = "No money was taken, and the kitchen didn't get this order. Your cart is saved, so trying again only takes a moment.";
   } else if (order.status === "OPEN") {
     headline = order.payment?.method === "CLOVER_ONLINE" ? "Confirming your payment…" : "Waiting for your payment";
     sub = "This page updates by itself once your payment goes through.";
   } else if (order.status === "VOIDED") {
     headline = "This order was cancelled";
     sub = order.voidedReason ?? "Please call the restaurant if you have questions.";
+    if (paidByCard && order.payment?.status === "REFUNDED") {
+      sub += " Your card was refunded in full. It usually shows on your statement within 5 to 10 business days.";
+    } else if (paidByCard && order.payment?.status === "COMPLETED") {
+      sub += " If you paid by card, we'll refund it. Call us if you don't see it within a few days.";
+    }
   } else if (order.status === "READY") {
     headline = "Your order is ready";
     sub = "Come to the counter and give your order code.";
@@ -80,7 +101,7 @@ export function OrderStatusView({
     headline = "Picked up. Bon apeti!";
     sub = "Thank you for ordering from us.";
   } else if (order.scheduledPickupAt) {
-    headline = `Pickup at ${time(order.scheduledPickupAt)}`;
+    headline = `Pickup ${dayOf(order.scheduledPickupAt) !== dayOf(order.createdAt) ? `${dayOf(order.scheduledPickupAt)} at ${time(order.scheduledPickupAt)}` : `at ${time(order.scheduledPickupAt)}`}`;
     sub = "Your order is in. We'll have it hot and ready at your pickup time.";
   } else {
     headline = "We're cooking your order";
@@ -100,10 +121,10 @@ export function OrderStatusView({
           <p className="mt-1.5 text-white/90">{sub}</p>
           {unpaid && (
             <Link
-              href="/order"
-              className="mt-5 inline-block rounded-2xl bg-white px-5 py-3 font-semibold text-mondy-red hover:bg-mondy-cream focus:outline-none focus-visible:ring-4 focus-visible:ring-white/50"
+              href="/order?checkout=1"
+              className="mt-5 inline-flex min-h-12 items-center rounded-2xl bg-white px-5 font-semibold text-mondy-red hover:bg-mondy-cream focus:outline-none focus-visible:ring-4 focus-visible:ring-white/50"
             >
-              Back to the menu
+              Try again
             </Link>
           )}
 
@@ -136,8 +157,33 @@ export function OrderStatusView({
           <p className="mt-6 flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-mondy-border">
             <Clock className="h-4 w-4 text-mondy-red" aria-hidden />
             <span>
-              Pickup time: <strong>{time(order.scheduledPickupAt)}</strong>
+              Pickup time: <strong>{pickupWhen(order.scheduledPickupAt)}</strong>
             </span>
+          </p>
+        )}
+
+        {unpaid && (
+          <section aria-labelledby="next-steps" className="rounded-2xl bg-white p-5 ring-1 ring-mondy-border">
+            <h2 id="next-steps" className="font-display text-lg font-black">
+              What you can do
+            </h2>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed">
+              <li>
+                Tap <strong>Try again</strong>. Your cart is still there, so go straight to payment.
+              </li>
+              <li>If your card was declined, use another card, or check the card number, date and ZIP code.</li>
+              <li>
+                Or choose <strong>Pay at pickup</strong> at checkout and pay at the counter, cash or card (orders up to $60).
+              </li>
+              {restaurant.phone && <li>Still stuck? Call us and we&apos;ll take your order by phone.</li>}
+            </ol>
+          </section>
+        )}
+
+        {slow && order.status === "OPEN" && !unpaid && (
+          <p role="status" className="rounded-2xl bg-mondy-yellow-soft/60 px-4 py-3 text-sm leading-relaxed">
+            This is taking longer than usual. <strong>Please don&apos;t pay again.</strong> If money left your account,
+            call us with your order code <strong>{order.code}</strong> and we&apos;ll sort it out.
           </p>
         )}
 
