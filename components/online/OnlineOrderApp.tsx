@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import { ArrowLeft, Clock, MapPin, Minus, Phone, Plus, ShoppingBag } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { ArrowLeft, Clock, MapPin, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { formatMoney } from "@/lib/money";
-import { priceStartsFrom, selectionKey, type OptionGroup } from "@/lib/options";
+import { checkSelection, priceStartsFrom, selectionKey, type OptionGroup } from "@/lib/options";
 import { submitOnlineOrder } from "@/app/order/actions";
 import { Wordmark } from "@/components/brand/Wordmark";
 import { OptionPicker } from "@/components/menu/OptionPicker";
+import { CallButton } from "./CallButton";
 import { CardPayment } from "./CardPayment";
 import { ClubCorner, type ClubPost } from "./ClubCorner";
 
@@ -37,6 +38,57 @@ type CartLine = {
 };
 
 type OpenState = { open: true; closesAt: string } | { open: false; message: string };
+type PickupSlot = { value: string; label: string };
+
+/* The cart is kept on the customer's phone, so a reload, a phone call, or
+   going back from the payment page doesn't empty it. */
+const CART_KEY = "rosewood_cart_v1";
+const CONTACT_KEY = "rosewood_contact_v1";
+const CART_TTL_MS = 3 * 60 * 60 * 1000;
+
+function store<T>(key: string, value: T | null) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode / storage blocked: the cart just isn't saved */
+  }
+}
+function load<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Saved lines checked against today's menu: gone or sold-out dishes drop, prices refresh. */
+function restoreCart(menu: Category[]): CartLine[] {
+  const saved = load<{ at: number; lines: CartLine[] }>(CART_KEY);
+  if (!saved || !Array.isArray(saved.lines) || Date.now() - saved.at > CART_TTL_MS) return [];
+  const items = new Map(menu.flatMap((c) => c.items).map((i) => [i.id, i]));
+  const out: CartLine[] = [];
+  for (const l of saved.lines) {
+    const item = items.get(l.menuItemId);
+    if (!item || item.soldOut || !Array.isArray(l.optionIds)) continue;
+    const sel = checkSelection(item.optionGroups, l.optionIds);
+    if (!sel.ok) continue;
+    let quantity = Math.max(1, Math.min(Math.floor(Number(l.quantity)) || 1, 20));
+    if (item.lowStock !== null) quantity = Math.min(quantity, item.lowStock);
+    if (quantity < 1) continue;
+    out.push({
+      key: selectionKey(item.id, l.optionIds),
+      menuItemId: item.id,
+      name: item.name,
+      price: Math.round((item.price + sel.extra) * 100) / 100,
+      quantity,
+      optionIds: l.optionIds,
+      summary: sel.summary,
+    });
+  }
+  return out;
+}
 
 type Props = {
   menu: Category[];
@@ -54,6 +106,7 @@ type Props = {
   stripeKey: string | null;
   logoUrl: string | null;
   clubPosts: ClubPost[];
+  pickupSlots: PickupSlot[];
 };
 
 type Step =
@@ -73,11 +126,28 @@ export function OnlineOrderApp({
   stripeKey,
   logoUrl,
   clubPosts,
+  pickupSlots,
 }: Props) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [step, setStep] = useState<Step>({ name: "menu" });
   const [choosing, setChoosing] = useState<MenuItem | null>(null);
+  const restored = useRef(false);
+
+  // Bring back a saved cart after the page loads (never during server render).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const lines = restoreCart(menu);
+      restored.current = true;
+      if (lines.length) setCart(lines);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [menu]);
+
+  useEffect(() => {
+    if (!restored.current) return;
+    store(CART_KEY, cart.length ? { at: Date.now(), lines: cart } : null);
+  }, [cart]);
 
   const count = cart.reduce((s, l) => s + l.quantity, 0);
   const subtotal = Math.round(cart.reduce((s, l) => s + l.price * l.quantity, 0) * 100) / 100;
@@ -99,9 +169,22 @@ export function OnlineOrderApp({
   function changeQty(key: string, delta: number) {
     setCart((c) =>
       c
-        .map((l) => (l.key === key ? { ...l, quantity: Math.min(l.quantity + delta, 20) } : l))
+        .map((l) => {
+          if (l.key !== key) return l;
+          let quantity = Math.min(l.quantity + delta, 20);
+          const stock = menu.flatMap((cat) => cat.items).find((i) => i.id === l.menuItemId)?.lowStock;
+          if (delta > 0 && stock != null) {
+            const others = c.filter((x) => x.menuItemId === l.menuItemId && x.key !== key).reduce((s, x) => s + x.quantity, 0);
+            quantity = Math.min(quantity, Math.max(stock - others, l.quantity));
+          }
+          return { ...l, quantity };
+        })
         .filter((l) => l.quantity > 0),
     );
+  }
+
+  function removeLine(key: string) {
+    setCart((c) => c.filter((l) => l.key !== key));
   }
 
   function onAddTap(item: MenuItem) {
@@ -141,13 +224,8 @@ export function OnlineOrderApp({
                 {restaurant.address}
               </span>
             )}
-            {restaurant.phone && (
-              <a href={`tel:${restaurant.phone}`} className="flex items-center gap-1.5 underline-offset-2 hover:text-mondy-ink hover:underline">
-                <Phone className="h-4 w-4" aria-hidden />
-                {restaurant.phone}
-              </a>
-            )}
           </div>
+          {restaurant.phone && <CallButton phone={restaurant.phone} className="mt-4" />}
 
           <p
             className={`mt-4 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold ${
@@ -211,17 +289,20 @@ export function OnlineOrderApp({
                           <img src={item.imageUrl} alt="" loading="lazy" decoding="async" className="aspect-[4/3] w-full object-cover" />
                         </button>
                       )}
-                      <p className="mx-auto max-w-md text-sm leading-relaxed text-mondy-muted">
-                        A rotating chef-inspired dish featuring flavors from around the world.
+                      <h3 className="font-display text-2xl font-black leading-tight">{item.name}</h3>
+                      <p className="mx-auto mt-1 max-w-md text-sm leading-relaxed text-mondy-ink/80">
+                        {item.description || "A rotating chef-inspired dish featuring flavors from around the world."}
                       </p>
+                      <p className="mt-2 text-lg font-bold tabular">{formatMoney(item.price)}</p>
                       <button
                         type="button"
                         onClick={() => onAddTap(item)}
                         disabled={!openState.open || item.soldOut}
-                        className="mt-5 inline-flex items-center gap-2 rounded-full bg-mondy-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted"
+                        aria-label={item.soldOut ? undefined : `Add ${item.name} to order`}
+                        className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-full bg-mondy-red px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-mondy-red-dark focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:bg-mondy-border disabled:text-mondy-muted"
                       >
                         <Plus className="h-4 w-4" aria-hidden />
-                        {item.soldOut ? "Today's PS is sold out" : `Add today's PS · ${formatMoney(item.price)}`}
+                        {item.soldOut ? "Today's PS is sold out" : "Add to order"}
                       </button>
                     </div>
                   ))}
@@ -373,7 +454,18 @@ export function OnlineOrderApp({
           payAtPickupLimit={payAtPickupLimit}
           onBack={() => setStep({ name: "menu" })}
           onChangeQty={changeQty}
-          onPickupPlaced={(orderId) => router.push(`/order/status/${orderId}`)}
+          onRemove={removeLine}
+          phone={restaurant.phone}
+          prepMinutes={restaurant.prepMinutes}
+          pickupSlots={pickupSlots}
+          canAddMore={(l) => {
+            const item = menu.flatMap((c) => c.items).find((i) => i.id === l.menuItemId);
+            return !!item && l.quantity < 20 && (item.lowStock === null || (qtyInCart.get(item.id) ?? 0) < item.lowStock);
+          }}
+          onPickupPlaced={(orderId) => {
+            store(CART_KEY, null);
+            router.push(`/order/status/${orderId}`);
+          }}
           onCardReady={(orderId, clientSecret, serverTotal) =>
             setStep({ name: "pay", orderId, clientSecret, total: serverTotal })
           }
@@ -422,6 +514,11 @@ function Checkout({
   payAtPickupLimit,
   onBack,
   onChangeQty,
+  onRemove,
+  canAddMore,
+  phone: restaurantPhone,
+  prepMinutes,
+  pickupSlots,
   onPickupPlaced,
   onCardReady,
 }: {
@@ -435,11 +532,18 @@ function Checkout({
   payAtPickupLimit: number;
   onBack: () => void;
   onChangeQty: (key: string, delta: number) => void;
+  onRemove: (key: string) => void;
+  canAddMore: (line: CartLine) => boolean;
+  phone: string | null;
+  prepMinutes: number;
+  pickupSlots: PickupSlot[];
   onPickupPlaced: (orderId: string) => void;
   onCardReady: (orderId: string, clientSecret: string, total: number) => void;
 }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [when, setWhen] = useState<"asap" | "later">("asap");
+  const [pickupAt, setPickupAt] = useState(pickupSlots[0]?.value ?? "");
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
   const [website, setWebsite] = useState("");
@@ -451,9 +555,20 @@ function Checkout({
 
   const effectivePayment = payment === "pickup" && !pickupAllowed ? "card" : payment;
 
+  // Fill in name and phone from the last order on this phone.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const saved = load<{ name?: string; phone?: string }>(CONTACT_KEY);
+      if (saved?.name) setName((n) => n || String(saved.name).slice(0, 60));
+      if (saved?.phone) setPhone((p) => p || String(saved.phone).slice(0, 20));
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    store(CONTACT_KEY, { name: name.trim(), phone: phone.trim() });
     startTransition(async () => {
       try {
         const res = await submitOnlineOrder({
@@ -467,6 +582,7 @@ function Checkout({
           customerEmail: email,
           notes,
           payment: effectivePayment,
+          pickupAt: when === "later" && pickupAt ? pickupAt : null,
           website,
         });
         if (!res.ok) {
@@ -506,34 +622,59 @@ function Checkout({
         <>
           <ul className="mt-3 divide-y divide-mondy-border rounded-2xl bg-white px-4 ring-1 ring-mondy-border">
             {cart.map((l) => (
-              <li key={l.key} className="flex items-center gap-3 py-3.5">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium">{l.name}</p>
-                  {l.summary && <p className="text-sm leading-snug text-mondy-muted">{l.summary}</p>}
+              <li key={l.key} className="py-3.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold leading-snug">{l.name}</p>
+                    {l.summary && <p className="text-sm leading-snug text-mondy-muted">{l.summary}</p>}
+                    <p className="text-sm tabular text-mondy-muted">{formatMoney(l.price)} each</p>
+                  </div>
+                  <span className="shrink-0 tabular font-semibold">{formatMoney(l.price * l.quantity)}</span>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="mt-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1" role="group" aria-label={`Quantity of ${l.name}`}>
+                    <button
+                      type="button"
+                      onClick={() => onChangeQty(l.key, -1)}
+                      aria-label={`One less ${l.name}`}
+                      className="grid h-11 w-11 place-items-center rounded-full ring-1 ring-mondy-border hover:bg-mondy-cream focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30"
+                    >
+                      <Minus className="h-4 w-4" aria-hidden />
+                    </button>
+                    <span className="w-9 text-center text-lg tabular font-semibold" aria-live="polite">
+                      {l.quantity}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onChangeQty(l.key, 1)}
+                      disabled={!canAddMore(l)}
+                      aria-label={`One more ${l.name}`}
+                      className="grid h-11 w-11 place-items-center rounded-full ring-1 ring-mondy-border hover:bg-mondy-cream focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30 disabled:opacity-40"
+                    >
+                      <Plus className="h-4 w-4" aria-hidden />
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => onChangeQty(l.key, -1)}
-                    aria-label={`One less ${l.name}`}
-                    className="grid h-9 w-9 place-items-center rounded-full ring-1 ring-mondy-border hover:bg-mondy-cream"
+                    onClick={() => onRemove(l.key)}
+                    className="flex h-11 items-center gap-1.5 rounded-full px-3 text-sm font-medium text-mondy-red-dark hover:bg-mondy-red/10 focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30"
                   >
-                    <Minus className="h-4 w-4" />
-                  </button>
-                  <span className="w-7 text-center tabular font-semibold">{l.quantity}</span>
-                  <button
-                    type="button"
-                    onClick={() => onChangeQty(l.key, 1)}
-                    aria-label={`One more ${l.name}`}
-                    className="grid h-9 w-9 place-items-center rounded-full ring-1 ring-mondy-border hover:bg-mondy-cream"
-                  >
-                    <Plus className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                    Remove<span className="sr-only"> {l.name}</span>
                   </button>
                 </div>
-                <span className="w-20 text-right tabular">{formatMoney(l.price * l.quantity)}</span>
               </li>
             ))}
           </ul>
+
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-3 flex h-11 items-center gap-1.5 rounded-full px-3 text-sm font-semibold text-mondy-red-dark hover:bg-mondy-red/10"
+          >
+            <Plus className="h-4 w-4" aria-hidden />
+            Add more items
+          </button>
 
           <dl className="mt-3 space-y-1 px-1 text-sm">
             <div className="flex justify-between">
@@ -615,10 +756,49 @@ function Checkout({
             </div>
 
             <fieldset>
+              <legend className="font-display text-xl font-black">Pickup time</legend>
+              <div className="mt-2 grid gap-2">
+                <PayOption
+                  name="when"
+                  checked={when === "asap"}
+                  onChange={() => setWhen("asap")}
+                  title="As soon as possible"
+                  detail={`Ready in about ${prepMinutes} min`}
+                />
+                <PayOption
+                  name="when"
+                  checked={when === "later"}
+                  onChange={() => setWhen("later")}
+                  disabled={pickupSlots.length === 0}
+                  title="Later today"
+                  detail={pickupSlots.length ? "Choose a time" : "No later times left today"}
+                />
+              </div>
+              {when === "later" && pickupSlots.length > 0 && (
+                <label className="mt-3 block text-sm font-medium">
+                  Pickup at
+                  <select
+                    className={`${field} appearance-auto`}
+                    value={pickupAt}
+                    onChange={(e) => setPickupAt(e.target.value)}
+                    required
+                  >
+                    {pickupSlots.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </fieldset>
+
+            <fieldset>
               <legend className="font-display text-xl font-black">Payment</legend>
               <div className="mt-2 grid gap-2">
                 {cardEnabled && (
                   <PayOption
+                    name="payment"
                     checked={effectivePayment === "card"}
                     onChange={() => setPayment("card")}
                     title="Pay now with card"
@@ -626,6 +806,7 @@ function Checkout({
                   />
                 )}
                 <PayOption
+                  name="payment"
                   checked={effectivePayment === "pickup"}
                   onChange={() => setPayment("pickup")}
                   disabled={!pickupAllowed}
@@ -658,6 +839,12 @@ function Checkout({
                   ? "Continue to payment"
                   : `Place order · ${formatMoney(total)}`}
             </button>
+
+            {restaurantPhone && (
+              <p className="text-center text-sm text-mondy-muted">
+                Questions about your order? <CallButton phone={restaurantPhone} variant="link" />
+              </p>
+            )}
           </form>
         </>
       )}
@@ -666,12 +853,14 @@ function Checkout({
 }
 
 function PayOption({
+  name,
   checked,
   onChange,
   disabled,
   title,
   detail,
 }: {
+  name: string;
   checked: boolean;
   onChange: () => void;
   disabled?: boolean;
@@ -686,11 +875,11 @@ function PayOption({
     >
       <input
         type="radio"
-        name="payment"
+        name={name}
         checked={checked}
         onChange={onChange}
         disabled={disabled}
-        className="h-4 w-4 accent-mondy-red"
+        className="h-5 w-5 shrink-0 accent-mondy-red"
       />
       <span>
         <span className="block font-semibold">{title}</span>

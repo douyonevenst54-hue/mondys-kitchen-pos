@@ -190,6 +190,7 @@ model Order {
   stripePaymentIntentId  String?     @unique
   onlineConfirmationCode String?     @unique  // "MK-4829", customer-facing
   estimatedReadyAt       DateTime?            // when we told the customer the food would be ready
+  scheduledPickupAt      DateTime?            // customer picked a pickup time (null = as soon as possible)
 
   staff           Staff             @relation(fields: [staffId], references: [id])
   shift           Shift?            @relation(fields: [shiftId], references: [id])

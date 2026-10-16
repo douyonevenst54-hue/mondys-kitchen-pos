@@ -82,3 +82,81 @@ export function onlineOpenState(opts: {
   }
   return { open: false, message: "Online ordering is closed." };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pickup times: "as soon as possible", or a time later today in 15-minute
+// steps, from (now + prep time) until closing. All in the restaurant's
+// timezone. The server recomputes this list and only accepts a time on it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type PickupSlot = { value: string; label: string }; // value "2026-10-15T13:30" (restaurant time)
+
+const STEP = 15;
+
+function localParts(tz: string, at: Date) {
+  const p = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(at);
+  const get = (t: string) => p.find((x) => x.type === t)!.value;
+  return {
+    ymd: `${get("year")}-${get("month")}-${get("day")}`,
+    weekday: get("weekday").toLowerCase(),
+    minutes: Number(get("hour")) * 60 + Number(get("minute")),
+  };
+}
+
+export function pickupSlots(opts: {
+  businessHours: Record<string, string | null> | null;
+  timezone: string;
+  prepMinutes: number;
+  now?: Date;
+}): PickupSlot[] {
+  const now = localParts(opts.timezone, opts.now ?? new Date());
+  let open = 0;
+  let close = 24 * 60 - STEP;
+  if (opts.businessHours) {
+    const range = opts.businessHours[now.weekday];
+    if (!range) return [];
+    const [s, e] = range.split("-");
+    const [sh, sm] = s.split(":").map(Number);
+    const [eh, em] = e.split(":").map(Number);
+    open = sh * 60 + sm;
+    close = eh * 60 + em;
+  } else {
+    close = Math.min(close, now.minutes + 8 * 60); // no hours set: up to 8 hours ahead
+  }
+  // A scheduled time must be later than "as soon as possible".
+  const earliest = Math.max(open + opts.prepMinutes, now.minutes + opts.prepMinutes + STEP);
+  const first = Math.ceil(earliest / STEP) * STEP;
+  const slots: PickupSlot[] = [];
+  for (let m = first; m <= close; m += STEP) {
+    const hh = String(Math.floor(m / 60)).padStart(2, "0");
+    const mm = String(m % 60).padStart(2, "0");
+    slots.push({ value: `${now.ymd}T${hh}:${mm}`, label: to12h(`${hh}:${mm}`) });
+  }
+  return slots;
+}
+
+/** "2026-10-15T13:30" in the restaurant's timezone → the real moment (UTC). */
+export function restaurantTimeToDate(value: string, timezone: string): Date | null {
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const [y, mo, d, h, mi] = m.slice(1).map(Number);
+  const target = Date.UTC(y, mo - 1, d, h, mi);
+  let guess = target;
+  // Two passes handle daylight-saving changes.
+  for (let i = 0; i < 2; i++) {
+    const p = localParts(timezone, new Date(guess));
+    const [py, pm, pd] = p.ymd.split("-").map(Number);
+    const shown = Date.UTC(py, pm - 1, pd, Math.floor(p.minutes / 60), p.minutes % 60);
+    guess += target - shown;
+  }
+  return new Date(guess);
+}

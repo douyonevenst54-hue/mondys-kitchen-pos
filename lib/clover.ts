@@ -187,7 +187,9 @@ export async function completeCloverOrder(orderId: string, proof: string): Promi
   if (payment.order.status !== "OPEN") return "already";
 
   const settings = await getSettings();
-  const readyAt = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
+  const asap = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
+  const scheduled = (await prisma.order.findUnique({ where: { id: orderId }, select: { scheduledPickupAt: true } }))?.scheduledPickupAt;
+  const readyAt = scheduled && scheduled > asap ? scheduled : asap;
   const keepRef = payment.processorRef && !proof.startsWith("clover:") ? `${payment.processorRef}|${proof}` : proof;
 
   return prisma.$transaction(async (tx) => {

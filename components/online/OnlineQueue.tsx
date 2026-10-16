@@ -86,7 +86,10 @@ export function OnlineQueue({
       new Date(d),
     );
 
-  const toMake = orders.filter((o) => o.status === "SENT");
+  // Soonest due first, so a 6 PM pre-order doesn't push lunch orders down.
+  const dueAt = (o: (typeof orders)[number]) =>
+    new Date(o.scheduledPickupAt ?? o.estimatedReadyAt ?? o.createdAt).getTime();
+  const toMake = orders.filter((o) => o.status === "SENT").sort((x, y) => dueAt(x) - dueAt(y));
   const ready = orders.filter((o) => o.status === "READY");
   const done = orders.filter((o) => o.status === "COMPLETED").reverse();
   const waiting = orders.filter((o) => o.status === "OPEN");
@@ -331,8 +334,13 @@ function OrderCard({
         </div>
         <div className="text-right text-xs text-mondy-muted">
           <p>Placed {time(order.createdAt)}</p>
-          {order.estimatedReadyAt && order.status === "SENT" && (
-            <p className="font-semibold text-mondy-ink">Due {time(order.estimatedReadyAt)}</p>
+          {order.scheduledPickupAt && order.status !== "COMPLETED" ? (
+            <p className="mt-0.5 inline-block rounded-full bg-mondy-yellow px-2 py-0.5 font-bold text-mondy-ink">
+              Pickup at {time(order.scheduledPickupAt)}
+            </p>
+          ) : (
+            order.estimatedReadyAt &&
+            order.status === "SENT" && <p className="font-semibold text-mondy-ink">Due {time(order.estimatedReadyAt)}</p>
           )}
           <p
             className={`mt-1 inline-block rounded-full px-2 py-0.5 font-semibold ${

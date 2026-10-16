@@ -40,6 +40,11 @@ const OrderSchema = z.object({
     .max(200, "Keep notes under 200 characters")
     .transform((v) => (v ? v : null)),
   payment: z.enum(["card", "pickup"]),
+  pickupAt: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+    .nullable()
+    .default(null),
   // Hidden field real people never fill in. Bots usually do.
   website: z.string().max(0).optional().default(""),
 });

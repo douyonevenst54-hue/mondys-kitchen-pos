@@ -88,15 +88,21 @@ export function OptionPicker({ name, description, imageUrl, unavailable, basePri
             <h2 id="option-picker-title" className="font-display text-2xl font-black leading-tight">
               {name}
             </h2>
+            <p className="mt-1 text-lg font-semibold tabular text-mondy-red-dark">
+              {groups.some((g) => g.options.some((o) => o.price > 0)) && extra === 0 && (
+                <span className="text-sm font-normal text-mondy-muted">from </span>
+              )}
+              {formatMoney(price)}
+            </p>
             {description && <p className="mt-1 text-sm leading-relaxed text-mondy-muted">{description}</p>}
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full p-2 text-mondy-muted transition hover:bg-mondy-cream focus:outline-none focus-visible:ring-2 focus-visible:ring-mondy-red/50"
+            className="-mr-2 -mt-1 grid h-11 w-11 shrink-0 place-items-center rounded-full text-mondy-muted transition hover:bg-mondy-cream focus:outline-none focus-visible:ring-2 focus-visible:ring-mondy-red/50"
           >
-            <X className="h-5 w-5" />
+            <X className="h-5 w-5" aria-hidden />
           </button>
         </header>
 

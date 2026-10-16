@@ -8,7 +8,7 @@ import { getStripe, toCents } from "@/lib/stripe";
 import { CloverError, attachCloverSession, createCloverCheckout, getCloverStatus } from "@/lib/clover";
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
-import { onlineOpenState } from "@/lib/online-hours";
+import { onlineOpenState, pickupSlots, restaurantTimeToDate } from "@/lib/online-hours";
 import { isListed, isSoldOut, needsPrice, servedOn, weekdayIn } from "@/lib/menu-visibility";
 import { checkSelection, type OptionGroup } from "@/lib/options";
 import { loadOptionGroups, optionGroupsInclude, toOptionGroups } from "@/lib/options-db";
@@ -235,6 +235,8 @@ export type PlaceOrderInput = {
   customerEmail: string | null;
   notes: string | null;
   payment: "card" | "pickup";
+  /** "2026-10-15T13:30" (restaurant time) or null for as soon as possible. */
+  pickupAt: string | null;
   /** https://mondyskitchen.com — where Clover sends the customer back. */
   returnBase: string;
 };
@@ -254,6 +256,20 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
     throw new OnlineOrderError(
       `Orders over $${PAY_AT_PICKUP_LIMIT} need to be paid online.`,
     );
+  }
+
+  // A chosen pickup time must be one of today's offered times.
+  let scheduledPickupAt: Date | null = null;
+  if (input.pickupAt) {
+    const slots = pickupSlots({
+      businessHours: settings.businessHours as Record<string, string | null> | null,
+      timezone: settings.timezone,
+      prepMinutes: settings.onlinePrepTimeMinutes,
+    });
+    if (!slots.some((s) => s.value === input.pickupAt)) {
+      throw new OnlineOrderError("That pickup time isn't available anymore. Please pick another time.");
+    }
+    scheduledPickupAt = restaurantTimeToDate(input.pickupAt, settings.timezone);
   }
 
   const staffId = await getOnlineStaffId();
@@ -277,7 +293,8 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
           customerEmail: input.customerEmail,
           notes: input.notes,
           onlineConfirmationCode: code,
-          estimatedReadyAt: isCard ? null : readyAt,
+          estimatedReadyAt: isCard ? null : (scheduledPickupAt ?? readyAt),
+          scheduledPickupAt,
           subtotal,
           taxAmount,
           total,
@@ -386,7 +403,9 @@ export async function finalizeCardPayment(paymentIntentId: string): Promise<void
   const charge = typeof pi.latest_charge === "object" ? pi.latest_charge : null;
   const card = charge?.payment_method_details?.card ?? null;
   const settings = await getSettings();
-  const readyAt = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
+  const asap = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
+  const scheduled = (await prisma.order.findUnique({ where: { id: order.id }, select: { scheduledPickupAt: true } }))?.scheduledPickupAt;
+  const readyAt = scheduled && scheduled > asap ? scheduled : asap;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -445,6 +464,7 @@ export type PublicOrder = {
   status: "OPEN" | "SENT" | "READY" | "COMPLETED" | "VOIDED";
   customerName: string | null;
   estimatedReadyAt: Date | null;
+  scheduledPickupAt: Date | null;
   voidedReason: string | null;
   payment: { method: string; status: string } | null;
   items: { name: string; quantity: number; notes: string | null; lineTotal: number }[];
@@ -469,6 +489,7 @@ export async function getPublicOrder(orderId: string): Promise<PublicOrder | nul
     status: o.status,
     customerName: o.customerName,
     estimatedReadyAt: o.estimatedReadyAt,
+    scheduledPickupAt: o.scheduledPickupAt,
     voidedReason: o.voidedReason,
     payment: o.payments[0] ?? null,
     items: o.items.map((i) => ({
@@ -497,6 +518,7 @@ export type QueueOrder = {
   notes: string | null;
   createdAt: Date;
   estimatedReadyAt: Date | null;
+  scheduledPickupAt: Date | null;
   completedAt: Date | null;
   total: number;
   paid: boolean;
@@ -534,6 +556,7 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
     notes: o.notes,
     createdAt: o.createdAt,
     estimatedReadyAt: o.estimatedReadyAt,
+    scheduledPickupAt: o.scheduledPickupAt,
     completedAt: o.completedAt,
     total: Number(o.total),
     paid: o.payments[0]?.status === "COMPLETED",

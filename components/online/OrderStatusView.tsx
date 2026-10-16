@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Check, MapPin, Phone } from "lucide-react";
+import { Check, Clock, MapPin } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import { refreshOnlineOrder, type ClientOrder } from "@/app/order/actions";
+import { CallButton } from "./CallButton";
 
 const STEPS = [
   { key: "SENT", label: "Order received" },
@@ -26,6 +27,17 @@ export function OrderStatusView({
 }) {
   const [order, setOrder] = useState(initial);
   const finished = order.status === "COMPLETED" || order.status === "VOIDED";
+
+  // The order reached the kitchen: the saved cart on this phone is done with.
+  // (While a payment is still open, keep it so "Back to the menu" still has it.)
+  useEffect(() => {
+    if (order.status === "OPEN") return;
+    try {
+      localStorage.removeItem("rosewood_cart_v1");
+    } catch {
+      /* storage blocked */
+    }
+  }, [order.status]);
 
   useEffect(() => {
     if (finished) return;
@@ -67,6 +79,9 @@ export function OrderStatusView({
   } else if (order.status === "COMPLETED") {
     headline = "Picked up. Bon apeti!";
     sub = "Thank you for ordering from us.";
+  } else if (order.scheduledPickupAt) {
+    headline = `Pickup at ${time(order.scheduledPickupAt)}`;
+    sub = "Your order is in. We'll have it hot and ready at your pickup time.";
   } else {
     headline = "We're cooking your order";
     sub = order.estimatedReadyAt
@@ -117,6 +132,15 @@ export function OrderStatusView({
           </ol>
         )}
 
+        {order.scheduledPickupAt && order.status !== "VOIDED" && order.status !== "COMPLETED" && (
+          <p className="mt-6 flex items-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm ring-1 ring-mondy-border">
+            <Clock className="h-4 w-4 text-mondy-red" aria-hidden />
+            <span>
+              Pickup time: <strong>{time(order.scheduledPickupAt)}</strong>
+            </span>
+          </p>
+        )}
+
         {payAtCounter && order.status !== "VOIDED" && (
           <p className="mt-6 rounded-2xl bg-mondy-yellow-soft/60 px-4 py-3 text-sm">
             You&apos;ll pay {formatMoney(order.total)} at the counter, cash or card.
@@ -161,12 +185,7 @@ export function OrderStatusView({
               {restaurant.address}
             </p>
           )}
-          {restaurant.phone && (
-            <a href={`tel:${restaurant.phone}`} className="flex items-center gap-2 underline-offset-2 hover:underline">
-              <Phone className="h-4 w-4 text-mondy-muted" aria-hidden />
-              {restaurant.phone}
-            </a>
-          )}
+          {restaurant.phone && <CallButton phone={restaurant.phone} className="mt-2" />}
         </div>
 
         {(order.status === "COMPLETED" || order.status === "READY") && (
