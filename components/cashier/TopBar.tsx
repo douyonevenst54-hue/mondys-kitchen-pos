@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare } from "lucide-react";
+import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, ChefHat, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { ShiftStatus } from "./ShiftStatus";
 
@@ -151,6 +151,13 @@ export function TopBar({
               >
                 <Globe className="h-4 w-4 text-mondy-muted" aria-hidden />
                 Online orders
+              </a>
+              <a
+                href="/kitchen"
+                className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+              >
+                <ChefHat className="h-4 w-4 text-mondy-muted" aria-hidden />
+                Kitchen screen
               </a>
               {(staffRole === "OWNER" || staffRole === "MANAGER") && (
                 <a

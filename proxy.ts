@@ -11,7 +11,7 @@ const CUSTOMER_PATHS = ["/order", "/api/stripe", "/api/clover"];
 // Paths a logged-in user can access regardless of shift status.
 // /shift/open is where we send cashiers without a shift; obviously they need
 // to be able to reach it. /shift/close is for closing. Sign-out via API.
-const SHIFT_EXEMPT_PATHS = ["/shift/open", "/shift/close", "/api"];
+const SHIFT_EXEMPT_PATHS = ["/shift/open", "/shift/close", "/api", "/kitchen"]; // cooks don't count a drawer
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

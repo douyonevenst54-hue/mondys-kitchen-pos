@@ -192,6 +192,11 @@ model Order {
   estimatedReadyAt       DateTime?            // when we told the customer the food would be ready
   scheduledPickupAt      DateTime?            // customer picked a pickup time (null = as soon as possible)
 
+  // Kitchen display: separate from payment status (register orders are paid
+  // and COMPLETED at the counter while the kitchen is still cooking).
+  kitchenStartedAt       DateTime?
+  kitchenDoneAt          DateTime?            // bumped off the kitchen screen
+
   staff           Staff             @relation(fields: [staffId], references: [id])
   shift           Shift?            @relation(fields: [shiftId], references: [id])
   table           Table?            @relation(fields: [tableId], references: [id])
@@ -214,6 +219,7 @@ model OrderItem {
   nameSnapshot String                       // SNAPSHOT — name at moment of ordering
   notes        String?                      // "no onions", "well done"
   lineTotal    Decimal  @db.Decimal(10, 2) // (unitPrice + sum(modifier prices)) * quantity
+  kitchenDoneAt DateTime?                   // crossed off on the kitchen screen
   createdAt    DateTime @default(now())
 
   order        Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)

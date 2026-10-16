@@ -620,7 +620,7 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
 export async function markOnlineReady(orderId: string): Promise<void> {
   const res = await prisma.order.updateMany({
     where: { id: orderId, source: "ONLINE_PICKUP", status: "SENT" },
-    data: { status: "READY" },
+    data: { status: "READY", kitchenDoneAt: new Date() }, // also off the kitchen screen
   });
   if (res.count === 0) throw new OnlineOrderError("This order isn't waiting to be made");
 }
