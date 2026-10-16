@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { confirmCloverPayments } from "@/lib/clover";
+import { queueOrderNotifications } from "@/lib/notify";
 import {
   MAX_LINES,
   MAX_QTY_PER_LINE,
@@ -46,6 +47,7 @@ const OrderSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
     .nullable()
     .default(null),
+  smsOptIn: z.boolean().default(false),
   // Hidden field real people never fill in. Bots usually do.
   website: z.string().max(0).optional().default(""),
 });
@@ -119,5 +121,6 @@ export async function refreshOnlineOrder(orderId: string): Promise<ClientOrder |
       console.error("Finalize from status page failed:", e);
     }
   }
+  if (order?.status === "VOIDED") queueOrderNotifications(order.id);
   return forClient(order);
 }

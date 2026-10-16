@@ -39,6 +39,7 @@ type Props = {
   prepTimeMinutes: number;
   allowPreorders: boolean;
   card: CardInfo;
+  notify: { email: { enabled: boolean; from: string; problem: string | null }; sms: { enabled: boolean; problem: string | null } };
 };
 
 export function OnlineSettingsForm({
@@ -48,6 +49,7 @@ export function OnlineSettingsForm({
   prepTimeMinutes: initialPrepTime,
   allowPreorders,
   card,
+  notify,
 }: Props) {
   return (
     <main className="min-h-screen bg-mondy-cream py-6">
@@ -66,6 +68,29 @@ export function OnlineSettingsForm({
         </header>
 
         <CardStatusLine card={card} />
+        <section aria-labelledby="notify-title" className="rounded-2xl bg-white p-5 ring-1 ring-mondy-border">
+          <h2 id="notify-title" className="font-display text-lg font-semibold text-mondy-ink">
+            Customer updates
+          </h2>
+          <ul className="mt-2 space-y-1.5 font-sans text-sm">
+            <li>
+              <span className={notify.email.enabled ? "font-semibold text-emerald-700" : "font-semibold text-mondy-red-dark"}>
+                Email {notify.email.enabled ? "on" : "off"}
+              </span>
+              {notify.email.enabled
+                ? ` · received, ready and cancelled emails go out from ${notify.email.from} when the customer gives an email.`
+                : ` · ${notify.email.problem}. Add it in Vercel to turn emails on.`}
+            </li>
+            <li>
+              <span className={notify.sms.enabled ? "font-semibold text-emerald-700" : "font-semibold text-mondy-muted"}>
+                Text messages {notify.sms.enabled ? "on" : "off"}
+              </span>
+              {notify.sms.enabled
+                ? " · customers can tick “text me when it’s ready” at checkout."
+                : " · not set up yet (needs a Twilio account). The checkout box stays hidden until then."}
+            </li>
+          </ul>
+        </section>
         <DetailsSection initial={details} />
         <PauseSection initialPaused={initialPaused} />
         <PrepTimeSection initialPrepTime={initialPrepTime} />

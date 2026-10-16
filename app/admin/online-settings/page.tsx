@@ -5,6 +5,7 @@ import { OnlineSettingsForm } from "@/components/admin/OnlineSettingsForm";
 import { verifySession } from "@/lib/session";
 import { getCardStatus, webhookConfigured } from "@/lib/stripe-config";
 import { getCloverStatus } from "@/lib/clover";
+import { emailStatus, smsStatus } from "@/lib/notify";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -37,6 +38,7 @@ export default async function OnlineSettingsPage() {
       businessHours={settings.businessHours}
       prepTimeMinutes={settings.onlinePrepTimeMinutes}
       allowPreorders={settings.allowPreorders}
+      notify={{ email: emailStatus(), sms: smsStatus() }}
       card={
         clover.enabled
           ? { provider: "Clover", enabled: true, mode: clover.env === "sandbox" ? "test" : "live", problem: null, webhook: clover.webhook }

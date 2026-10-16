@@ -197,6 +197,12 @@ model Order {
   kitchenStartedAt       DateTime?
   kitchenDoneAt          DateTime?            // bumped off the kitchen screen
 
+  // Customer updates (email always if given; texts only with consent)
+  smsOptIn               Boolean   @default(false)
+  notifyReceivedAt       DateTime?
+  notifyReadyAt          DateTime?
+  notifyCancelledAt      DateTime?
+
   staff           Staff             @relation(fields: [staffId], references: [id])
   shift           Shift?            @relation(fields: [shiftId], references: [id])
   table           Table?            @relation(fields: [tableId], references: [id])

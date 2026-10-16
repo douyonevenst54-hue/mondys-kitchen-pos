@@ -7,6 +7,7 @@ import { OrderDetailActions } from "@/components/orders/OrderDetailActions";
 import { formatMoney } from "@/lib/money";
 import { paymentLabel } from "@/components/orders/StatsSummary";
 import { verifySession } from "@/lib/session";
+import { queueOrderNotifications } from "@/lib/notify";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -36,6 +37,8 @@ export default async function OrderDetailPage({
   if (!order) notFound();
 
   const voided = order.status === "VOIDED";
+  // A voided online order: let the customer know (sent once; no-op otherwise).
+  if (voided) queueOrderNotifications(id);
 
   return (
     <main className="min-h-screen bg-mondy-cream">

@@ -115,6 +115,8 @@ type Props = {
   logoUrl: string | null;
   clubPosts: ClubPost[];
   pickupDays: PickupDay[];
+  /** Text-message updates are set up (Twilio). */
+  textUpdates: boolean;
 };
 
 type Step =
@@ -135,6 +137,7 @@ export function OnlineOrderApp({
   logoUrl,
   clubPosts,
   pickupDays,
+  textUpdates,
 }: Props) {
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -477,6 +480,7 @@ export function OnlineOrderApp({
           phone={restaurant.phone}
           prepMinutes={restaurant.prepMinutes}
           pickupDays={pickupDays}
+          textUpdates={textUpdates}
           onRemoveItem={(menuItemId) => setCart((c) => c.filter((l) => l.menuItemId !== menuItemId))}
           onLimitItem={(menuItemId, left) =>
             setCart((c) => {
@@ -554,6 +558,7 @@ function Checkout({
   phone: restaurantPhone,
   prepMinutes,
   pickupDays,
+  textUpdates,
   onRemoveItem,
   onLimitItem,
   onPickupPlaced,
@@ -576,6 +581,7 @@ function Checkout({
   phone: string | null;
   prepMinutes: number;
   pickupDays: PickupDay[];
+  textUpdates: boolean;
   onRemoveItem: (menuItemId: string) => void;
   onLimitItem: (menuItemId: string, left: number) => void;
   onPickupPlaced: (orderId: string) => void;
@@ -592,6 +598,7 @@ function Checkout({
   const errorRef = useRef<HTMLDivElement>(null);
   const scheduled = when === "later" || !open;
   const [email, setEmail] = useState("");
+  const [textMe, setTextMe] = useState(false);
   const [notes, setNotes] = useState("");
   const [website, setWebsite] = useState("");
   const pickupAllowed = total <= payAtPickupLimit;
@@ -647,6 +654,7 @@ function Checkout({
           notes,
           payment: effectivePayment,
           pickupAt: scheduled && pickupAt ? pickupAt : null,
+          smsOptIn: textUpdates && textMe,
           website,
         });
         if (!res.ok) {
@@ -790,7 +798,7 @@ function Checkout({
               </span>
             </label>
             <label className="block text-sm font-medium">
-              Email for receipt <span className="font-normal text-mondy-muted">(optional)</span>
+              Email for order updates <span className="font-normal text-mondy-muted">(optional)</span>
               <input
                 className={field}
                 value={email}
@@ -799,6 +807,22 @@ function Checkout({
                 autoComplete="email"
               />
             </label>
+            {textUpdates && (
+              <label className="flex min-h-11 cursor-pointer items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={textMe}
+                  onChange={(e) => setTextMe(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-mondy-red"
+                />
+                <span>
+                  <span className="font-medium">Text me when my order is ready</span>
+                  <span className="block text-xs text-mondy-muted">
+                    Order updates only, to the phone above. Msg &amp; data rates may apply. Reply STOP to opt out.
+                  </span>
+                </span>
+              </label>
+            )}
             <label className="block text-sm font-medium">
               Notes for the kitchen <span className="font-normal text-mondy-muted">(optional)</span>
               <textarea

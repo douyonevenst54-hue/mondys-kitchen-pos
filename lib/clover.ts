@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
 import { PortionError, sellPortions } from "@/lib/portions";
 import { isForLaterDay } from "@/lib/online-hours";
+import { queueOrderNotifications } from "@/lib/notify";
 
 /**
  * Online card payments through Clover Hosted Checkout.
@@ -193,7 +194,7 @@ export async function completeCloverOrder(orderId: string, proof: string): Promi
   const readyAt = scheduled && scheduled > asap ? scheduled : asap;
   const keepRef = payment.processorRef && !proof.startsWith("clover:") ? `${payment.processorRef}|${proof}` : proof;
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const claimed = await tx.payment.updateMany({
       where: { id: payment.id, status: "PENDING" },
       data: { status: "COMPLETED", processedAt: new Date(), processorRef: keepRef.slice(0, 190) },
@@ -222,6 +223,8 @@ export async function completeCloverOrder(orderId: string, proof: string): Promi
     });
     return "done" as const;
   });
+  if (result === "done") queueOrderNotifications(orderId);
+  return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import { getStripe, toCents } from "@/lib/stripe";
 import { CloverError, attachCloverSession, createCloverCheckout, getCloverStatus } from "@/lib/clover";
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
+import { queueOrderNotifications, smsStatus } from "@/lib/notify";
 import { isForLaterDay, onlineOpenState, pickupDays, restaurantTimeToDate } from "@/lib/online-hours";
 import { isListed, isSoldOut, needsPrice, servedOn, weekdayIn } from "@/lib/menu-visibility";
 import { checkSelection, type OptionGroup } from "@/lib/options";
@@ -277,6 +278,8 @@ export type PlaceOrderInput = {
   payment: "card" | "pickup";
   /** "2026-10-15T13:30" (restaurant time) or null for as soon as possible. */
   pickupAt: string | null;
+  /** Customer ticked "Text me when it's ready". */
+  smsOptIn: boolean;
   /** https://mondyskitchen.com — where Clover sends the customer back. */
   returnBase: string;
 };
@@ -341,6 +344,7 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
           onlineConfirmationCode: code,
           estimatedReadyAt: isCard ? null : (scheduledPickupAt ?? readyAt),
           scheduledPickupAt,
+          smsOptIn: input.smsOptIn && smsStatus().enabled,
           subtotal,
           taxAmount,
           total,
@@ -367,7 +371,10 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
     throw e;
   });
 
-  if (!isCard) return { kind: "pickup", orderId: order.id };
+  if (!isCard) {
+    queueOrderNotifications(order.id);
+    return { kind: "pickup", orderId: order.id };
+  }
 
   if (useClover) {
     try {
@@ -477,6 +484,7 @@ export async function finalizeCardPayment(paymentIntentId: string): Promise<void
       });
       if (!isForLaterDay(scheduled, settings.timezone)) await sellPortions(tx, items, order.staffId, order.id);
     });
+    queueOrderNotifications(order.id);
   } catch (e) {
     if (!(e instanceof PortionError)) throw e;
     // A dish sold out between checkout and payment: refund and cancel.
@@ -623,6 +631,7 @@ export async function markOnlineReady(orderId: string): Promise<void> {
     data: { status: "READY", kitchenDoneAt: new Date() }, // also off the kitchen screen
   });
   if (res.count === 0) throw new OnlineOrderError("This order isn't waiting to be made");
+  queueOrderNotifications(orderId);
 }
 
 /**

@@ -6,6 +6,7 @@ import { getCardStatus } from "@/lib/stripe-config";
 import { getCloverStatus } from "@/lib/clover";
 import { getLiveAnnouncements } from "@/lib/announcements";
 import { pickupDays } from "@/lib/online-hours";
+import { smsStatus } from "@/lib/notify";
 import { OnlineOrderApp } from "@/components/online/OnlineOrderApp";
 
 export const metadata: Metadata = {
@@ -50,6 +51,7 @@ export default async function OrderPage() {
       logoUrl={resolveLogoUrl()}
       clubPosts={clubPosts}
       pickupDays={days}
+      textUpdates={smsStatus().enabled}
     />
   );
 }

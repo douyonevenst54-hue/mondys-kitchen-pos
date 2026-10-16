@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
+import { queueOrderNotifications } from "@/lib/notify";
 
 /**
  * Kitchen display. Every order that needs cooking shows as a ticket until
@@ -165,6 +166,9 @@ export async function bumpTicket(orderId: string): Promise<{ becameReady: boolea
       data: { status: "READY" },
     });
     return { becameReady: ready.count > 0 };
+  }).then((r) => {
+    if (r.becameReady) queueOrderNotifications(orderId);
+    return r;
   });
 }
 
