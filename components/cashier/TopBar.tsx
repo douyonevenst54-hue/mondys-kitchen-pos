@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, ChefHat, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare } from "lucide-react";
+import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, ChefHat, Calculator, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { ShiftStatus } from "./ShiftStatus";
 
@@ -220,6 +220,15 @@ export function TopBar({
                 >
                   <Megaphone className="h-4 w-4 text-mondy-muted" aria-hidden />
                   PS Club posts
+                </a>
+              )}
+              {(staffRole === "OWNER" || staffRole === "MANAGER") && (
+                <a
+                  href="/reports/accounting"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <Calculator className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Tax &amp; accounting
                 </a>
               )}
               {(staffRole === "OWNER" || staffRole === "MANAGER") && (

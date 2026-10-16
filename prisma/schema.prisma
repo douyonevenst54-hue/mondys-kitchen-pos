@@ -420,7 +420,8 @@ model RestaurantSettings {
   address             String?
   phone               String?
   email               String?
-  taxRate             Decimal  @db.Decimal(5, 4) @default(0.0625)
+  taxRate             Decimal  @db.Decimal(5, 4) @default(0.07) // MA 6.25% + 0.75% local meals tax
+  accountingAccounts  Json?    // QuickBooks account names for the journal export
   currency            String   @default("USD")
   receiptFooter       String?
   logoUrl             String?
