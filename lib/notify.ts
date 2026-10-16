@@ -270,3 +270,38 @@ export async function sendSms(to: string, body: string) {
   });
   if (!res.ok) throw new Error(`Twilio ${res.status}: ${(await res.text()).slice(0, 200)}`);
 }
+
+/**
+ * Orders voided in the last 2 days that may still owe a follow-up (points to
+ * give back, a "cancelled" email). Called from staff screens, so voids are
+ * settled without touching the void flow itself. Safe to call often.
+ */
+export function sweepRecentVoids(): void {
+  const run = async () => {
+    const since = new Date(Date.now() - 2 * 86_400_000);
+    const rows = await prisma.order.findMany({
+      where: {
+        status: "VOIDED",
+        voidedAt: { gte: since },
+        OR: [
+          { notifyReceivedAt: { not: null }, notifyCancelledAt: null },
+          {
+            loyaltyEvents: { some: { kind: { in: ["REDEEM", "EARN"] } } },
+            NOT: { loyaltyEvents: { some: { kind: { in: ["RETURN_REDEEM", "REVERSE_EARN"] } } } },
+          },
+        ],
+      },
+      select: { id: true },
+      take: 20,
+    });
+    for (const r of rows) {
+      await reconcileLoyalty(r.id).catch((e) => console.error("Rewards update failed:", e));
+      await sendOrderNotifications(r.id).catch((e) => console.error("Order notification failed:", e));
+    }
+  };
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}

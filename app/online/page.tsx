@@ -5,12 +5,14 @@ import { OnlineQueue } from "@/components/online/OnlineQueue";
 import { getReaderInfo } from "@/lib/terminal";
 import { confirmCloverPayments } from "@/lib/clover";
 import { countNewMessages } from "@/lib/messages";
+import { sweepRecentVoids } from "@/lib/notify";
 
 export default async function OnlineQueuePage() {
   const staff = await getStaffFromSession();
   if (!staff) redirect("/login");
 
   await confirmCloverPayments().catch(() => 0);
+  sweepRecentVoids();
   const [orders, { settings, state }, reader] = await Promise.all([
     getOnlineQueue(),
     getOnlineStatus(),

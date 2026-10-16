@@ -299,7 +299,7 @@ export async function quickbooksJournalCsv(from: string, to: string, timezone: s
     if (d.collected === 0 && d.refunds === 0 && d.grossSales === 0) continue;
     const no = `RW-${d.day.replace(/-/g, "")}`;
     const date = usDate(d.day);
-    const desc = `Rosewood Cafe daily sales ${date} (${d.orders} orders${d.refunds ? `, ${d.refunds.toFixed(2)} refunded` : ""})`;
+    const desc = `Rosewood Cafe daily sales ${date} (${d.orders} order${d.orders === 1 ? "" : "s"}${d.refunds ? `, ${d.refunds.toFixed(2)} refunded` : ""})`;
     // Positive = debit, negative = credit.
     const lines: [AccountKey, number][] = [
       ["cash", d.cash],

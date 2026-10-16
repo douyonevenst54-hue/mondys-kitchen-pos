@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { sweepRecentVoids } from "@/lib/notify";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { FileBarChart, Settings2 } from "lucide-react";
@@ -41,6 +42,7 @@ export default async function OrdersPage({
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
+  sweepRecentVoids(); // settle points/emails for orders voided recently
 
   const params = await searchParams;
   const rawRange = params.range ?? "today";
