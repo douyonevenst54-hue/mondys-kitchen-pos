@@ -15,6 +15,7 @@ export type MenuItemWithModifiers = {
   portionsLeft: number | null;
   categoryId: string;
   optionGroups: OptionGroup[];
+  barcode: string | null;
 };
 
 export type CategoryWithItems = {
@@ -54,6 +55,7 @@ function baseItem(item: LoadedItem): MenuItemWithModifiers {
     portionsLeft: item.portionsLeft,
     categoryId: item.categoryId,
     optionGroups: toOptionGroups(item.modifierGroups),
+    barcode: item.barcode,
   };
 }
 

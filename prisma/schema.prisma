@@ -52,6 +52,7 @@ model MenuItem {
   serveDays       Int      @default(127)  // weekly schedule bitmask: bit 0 = Sunday … bit 6 = Saturday (127 = every day)
   menuNumber      Int?                    // number printed on the paper menu ("I'll have a number 7")
   isSignature     Boolean  @default(false) // ★ Rosewood Signature
+  barcode         String?  @unique         // UPC/EAN on packaged drinks (12-digit UPC-A form when it starts with 0)
   sortOrder       Int      @default(0)
   taxable         Boolean  @default(true) // some items (e.g. certain groceries) may be non-taxable
   createdAt       DateTime @default(now())

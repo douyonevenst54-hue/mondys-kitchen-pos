@@ -1,18 +1,25 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { CategoryWithItems, MenuItemWithModifiers } from "@/lib/menu";
 import { useCart } from "./CartContext";
 import { formatMoney } from "@/lib/money";
 import { SlidersHorizontal } from "lucide-react";
 import { OptionPicker } from "@/components/menu/OptionPicker";
 import { priceStartsFrom } from "@/lib/options";
+import { barcodeVariants } from "@/lib/barcode";
+import { lookUpBarcode, type ScanItem, type ScanLookup } from "@/app/api/barcode/actions";
+import { CameraScanner, ScanButton, UnknownScan, useScannerInput } from "./BarcodeScan";
 
 type Props = {
   categories: CategoryWithItems[];
   activeCategoryId: string | null;
   onCategoryChange: (id: string) => void;
   searchValue: string;
+  staffRole: string;
+  /** A scanner typed into the search box: clear it. */
+  onScanned: (code: string) => void;
 };
 
 export function MenuGrid({
@@ -20,6 +27,8 @@ export function MenuGrid({
   activeCategoryId,
   onCategoryChange,
   searchValue,
+  staffRole,
+  onScanned,
 }: Props) {
   const trimmed = searchValue.trim().toLowerCase();
   const isSearching = trimmed.length > 0;
@@ -40,6 +49,64 @@ export function MenuGrid({
     return active?.items ?? [];
   }, [categories, activeCategoryId, isSearching, trimmed]);
 
+  // ── Barcodes ──
+  const router = useRouter();
+  const [camera, setCamera] = useState(false);
+  const [unknown, setUnknown] = useState<Extract<ScanLookup, { status: "unknown" | "hidden" }> | null>(null);
+  const [toast, setToast] = useState<{ ok: boolean; text: string } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isManager = staffRole === "OWNER" || staffRole === "MANAGER";
+
+  const say = useCallback((ok: boolean, text: string) => {
+    setToast({ ok, text });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  const sell = useCallback(
+    (item: Pick<MenuItemWithModifiers, "id" | "name" | "price" | "isAvailable" | "optionGroups">) => {
+      if (!item.isAvailable) return say(false, `${item.name} is marked sold out`);
+      if (item.optionGroups.length > 0) return setChoosing(item as MenuItemWithModifiers);
+      addItem(item.id, item.name, item.price);
+      say(true, `${item.name} · ${formatMoney(item.price)} added`);
+    },
+    [addItem, say],
+  );
+
+  const handleCode = useCallback(
+    async (raw: string) => {
+      onScanned(raw);
+      const forms = barcodeVariants(raw);
+      const local = categories.flatMap((c) => c.items).find((i) => i.barcode && forms.includes(i.barcode));
+      if (local) return sell(local);
+      try {
+        const r = await lookUpBarcode(raw);
+        if (r.status === "error") return say(false, r.error);
+        if (r.status === "ok") {
+          // Added since this register loaded its menu.
+          router.refresh();
+          if (r.item.hasOptions) return say(true, `${r.item.name}: tap it on the menu to choose its options`);
+          addItem(r.item.id, r.item.name, r.item.price);
+          return say(true, `${r.item.name} · ${formatMoney(r.item.price)} added`);
+        }
+        setUnknown(r);
+      } catch {
+        say(false, "Couldn't look up that barcode. Check the connection.");
+      }
+    },
+    [categories, sell, say, router, addItem, onScanned],
+  );
+
+  useScannerInput((code) => void handleCode(code), !camera && !unknown && !choosing);
+
+  function scannedItemSaved(item: ScanItem) {
+    setUnknown(null);
+    router.refresh();
+    if (item.hasOptions) return say(true, `Saved. Tap ${item.name} on the menu to choose its options.`);
+    addItem(item.id, item.name, item.price);
+    say(true, `Saved · ${item.name} · ${formatMoney(item.price)} added`);
+  }
+
   function handleTileTap(item: MenuItemWithModifiers) {
     if (item.optionGroups.length > 0) {
       setChoosing(item);
@@ -51,8 +118,8 @@ export function MenuGrid({
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-mondy-cream">
       {/* Category tabs */}
-      <div className="border-b border-mondy-border bg-white">
-        <div className="flex gap-1 overflow-x-auto px-3 py-2 scrollbar-thin sm:px-5">
+      <div className="flex items-center gap-2 border-b border-mondy-border bg-white pr-3 sm:pr-5">
+        <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto px-3 py-2 scrollbar-thin sm:px-5">
           {categories.map((c) => {
             const active = !isSearching && c.id === activeCategoryId;
             return (
@@ -70,7 +137,7 @@ export function MenuGrid({
                 <span
                   className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-sans font-medium tabular ${
                     active
-                      ? "bg-white/20 text-white"
+                      ? "bg-white text-mondy-red-dark"
                       : "bg-mondy-yellow-soft/60 text-mondy-red-dark"
                   }`}
                 >
@@ -80,7 +147,19 @@ export function MenuGrid({
             );
           })}
         </div>
+        <ScanButton onClick={() => setCamera(true)} />
       </div>
+
+      {toast && (
+        <p
+          role="status"
+          className={`mx-3 mt-3 rounded-xl px-4 py-3 font-display text-lg font-bold shadow-sm sm:mx-5 ${
+            toast.ok ? "bg-emerald-700 text-white" : "bg-mondy-red text-white"
+          }`}
+        >
+          {toast.text}
+        </p>
+      )}
 
       {/* Item grid */}
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
@@ -104,6 +183,25 @@ export function MenuGrid({
           </div>
         )}
       </div>
+
+      {camera && (
+        <CameraScanner
+          onClose={() => setCamera(false)}
+          onCode={(code) => {
+            setCamera(false);
+            void handleCode(code);
+          }}
+        />
+      )}
+      {unknown && (
+        <UnknownScan
+          lookup={unknown}
+          categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+          isManager={isManager}
+          onSold={scannedItemSaved}
+          onClose={() => setUnknown(null)}
+        />
+      )}
 
       {choosing && (
         <OptionPicker

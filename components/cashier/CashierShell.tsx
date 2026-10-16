@@ -83,6 +83,8 @@ export function CashierShell({
               activeCategoryId={activeCategoryId}
               onCategoryChange={setActiveCategoryId}
               searchValue={searchValue}
+              staffRole={staffRole}
+              onScanned={(code) => setSearchValue((v) => (v.includes(code) ? "" : v))}
             />
           </div>
 
