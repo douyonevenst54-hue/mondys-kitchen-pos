@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowLeft, Bell, BellOff, CreditCard, Phone, Settings2 } from "lucide-react";
+import { ArrowLeft, Bell, BellOff, CreditCard, MessageSquare, Phone, Settings2 } from "lucide-react";
 import { formatMoney } from "@/lib/money";
 import {
   cancelUnpaidOrder,
@@ -41,6 +41,7 @@ export function OnlineQueue({
   closedMessage,
   canManage,
   reader,
+  newMessages = 0,
 }: {
   initial: QueueOrder[];
   timezone: string;
@@ -48,6 +49,7 @@ export function OnlineQueue({
   closedMessage: string | null;
   canManage: boolean;
   reader: { paired: boolean; simulated: boolean };
+  newMessages?: number;
 }) {
   const [orders, setOrders] = useState(initial);
   const [soundOn, setSoundOn] = useState(false);
@@ -145,6 +147,18 @@ export function OnlineQueue({
               >
                 <CreditCard className="h-3.5 w-3.5" aria-hidden />
                 Card reader
+              </Link>
+            )}
+            {canManage && (
+              <Link
+                href="/messages"
+                className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-sans text-xs font-medium text-mondy-ink ring-1 ring-mondy-border transition hover:bg-mondy-cream"
+              >
+                <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+                Messages
+                {newMessages > 0 && (
+                  <span className="rounded-full bg-mondy-red px-1.5 text-[10px] font-bold text-white">{newMessages}</span>
+                )}
               </Link>
             )}
           </div>

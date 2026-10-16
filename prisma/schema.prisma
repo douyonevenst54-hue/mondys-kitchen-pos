@@ -507,3 +507,33 @@ model Announcement {
 
   @@index([isPublished, showFrom])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CUSTOMER MESSAGES — sent from the online order page (Contact, Catering,
+// Feedback) and read by managers on the Messages screen.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MessageKind {
+  CONTACT   // general question
+  CATERING  // event / large order request
+  FEEDBACK  // how was your order
+}
+
+model CustomerMessage {
+  id         String      @id @default(cuid())
+  kind       MessageKind
+  name       String?
+  phone      String?     // 10 digits
+  email      String?
+  message    String
+  eventDate  String?     // catering: YYYY-MM-DD
+  guests     Int?        // catering: number of people
+  rating     Int?        // feedback: 1–5
+  orderCode  String?     // feedback: MK-123456, if they had one
+  isHandled  Boolean     @default(false)
+  handledBy  String?
+  handledAt  DateTime?
+  createdAt  DateTime    @default(now())
+
+  @@index([isHandled, createdAt])
+}

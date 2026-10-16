@@ -4,6 +4,7 @@ import { getOnlineQueue, getOnlineStatus } from "@/lib/online-orders";
 import { OnlineQueue } from "@/components/online/OnlineQueue";
 import { getReaderInfo } from "@/lib/terminal";
 import { confirmCloverPayments } from "@/lib/clover";
+import { countNewMessages } from "@/lib/messages";
 
 export default async function OnlineQueuePage() {
   const staff = await getStaffFromSession();
@@ -24,6 +25,7 @@ export default async function OnlineQueuePage() {
       closedMessage={state.open ? null : state.message}
       canManage={staff.role === "OWNER" || staff.role === "MANAGER"}
       reader={{ paired: Boolean(reader?.paired), simulated: Boolean(reader?.simulated) }}
+      newMessages={staff.role === "OWNER" || staff.role === "MANAGER" ? await countNewMessages() : 0}
     />
   );
 }

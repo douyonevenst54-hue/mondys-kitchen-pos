@@ -6,6 +6,7 @@ import { logout } from "@/app/login/actions";
 import { resolveLogoUrl } from "@/lib/logo";
 import { getCurrentShift } from "@/app/api/orders/actions";
 import { verifySession } from "@/lib/session";
+import { countNewMessages } from "@/lib/messages";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -34,6 +35,8 @@ export default async function HomePage() {
     getCurrentShift(session.staffId),
   ]);
   const logoUrl = resolveLogoUrl();
+  const isManager = session.role === "OWNER" || session.role === "MANAGER";
+  const newMessages = isManager ? await countNewMessages() : 0;
 
   return (
     <CashierShell
@@ -48,6 +51,7 @@ export default async function HomePage() {
       logoUrl={logoUrl}
       hasOpenShift={Boolean(currentShift)}
       shiftStartedAt={currentShift?.startedAt ?? null}
+      newMessages={newMessages}
     />
   );
 }

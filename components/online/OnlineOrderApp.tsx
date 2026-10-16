@@ -316,7 +316,24 @@ export function OnlineOrderApp({
               ),
             )}
 
-            <footer className="mt-12 border-t border-mondy-rule pt-5 text-center text-sm text-mondy-muted">
+            <nav aria-label="More from Rosewood" className="mt-12 grid grid-cols-3 gap-2 text-center">
+              {[
+                { href: "/order/contact?type=catering", title: "Catering", sub: "Events & large orders" },
+                { href: "/order/contact", title: "Contact us", sub: "Questions" },
+                { href: "/order/contact?type=feedback", title: "Feedback", sub: "How did we do?" },
+              ].map((l) => (
+                <a
+                  key={l.href}
+                  href={l.href}
+                  className="rounded-2xl bg-white px-2 py-3 ring-1 ring-mondy-border transition hover:ring-mondy-red/50 focus:outline-none focus-visible:ring-4 focus-visible:ring-mondy-red/30"
+                >
+                  <span className="block font-display text-[15px] font-black text-mondy-red">{l.title}</span>
+                  <span className="block text-xs text-mondy-muted">{l.sub}</span>
+                </a>
+              ))}
+            </nav>
+
+            <footer className="mt-8 border-t border-mondy-rule pt-5 text-center text-sm text-mondy-muted">
               {hasSignature && (
                 <p>
                   <span className="text-mondy-red">★</span> Rosewood Signature

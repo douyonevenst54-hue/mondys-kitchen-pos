@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed } from "lucide-react";
+import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { ShiftStatus } from "./ShiftStatus";
 
@@ -14,6 +14,7 @@ type Props = {
   logoUrl: string | null;
   hasOpenShift: boolean;
   shiftStartedAt: Date | string | null;
+  newMessages?: number;
 };
 
 export function TopBar({
@@ -25,6 +26,7 @@ export function TopBar({
   logoUrl,
   hasOpenShift,
   shiftStartedAt,
+  newMessages = 0,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -86,6 +88,11 @@ export function TopBar({
           >
             <User className="h-4 w-4" />
           </span>
+          {newMessages > 0 && (
+            <span className="-ml-3 -mt-5 grid h-5 min-w-5 place-items-center rounded-full bg-mondy-ink px-1 text-[10px] font-bold text-white" aria-label={`${newMessages} new messages`}>
+              {newMessages}
+            </span>
+          )}
           <span className="hidden text-left leading-tight sm:flex sm:flex-col">
             <span className="font-display text-sm font-semibold text-mondy-ink">
               {staffName}
@@ -206,6 +213,18 @@ export function TopBar({
                 >
                   <Megaphone className="h-4 w-4 text-mondy-muted" aria-hidden />
                   PS Club posts
+                </a>
+              )}
+              {(staffRole === "OWNER" || staffRole === "MANAGER") && (
+                <a
+                  href="/messages"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <MessageSquare className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Messages
+                  {newMessages > 0 && (
+                    <span className="ml-auto rounded-full bg-mondy-red px-2 py-0.5 text-[11px] font-bold text-white">{newMessages} new</span>
+                  )}
                 </a>
               )}
               <form action={signOutAction}>

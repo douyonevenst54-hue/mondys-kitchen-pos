@@ -169,6 +169,19 @@ export function OrderStatusView({
           )}
         </div>
 
+        {(order.status === "COMPLETED" || order.status === "READY") && (
+          <Link
+            href={`/order/contact?type=feedback&order=${encodeURIComponent(order.code)}`}
+            className="mt-8 flex items-center justify-between rounded-2xl bg-white px-5 py-4 ring-1 ring-mondy-border transition hover:ring-mondy-red/50"
+          >
+            <span>
+              <span className="block font-display text-lg font-black">How was your order?</span>
+              <span className="text-sm text-mondy-muted">Tell us. It takes 30 seconds.</span>
+            </span>
+            <span aria-hidden className="text-2xl text-mondy-red">★</span>
+          </Link>
+        )}
+
         <p className="mt-8 text-sm text-mondy-muted">
           Keep this page open or bookmark it to check on your order.{" "}
           <Link href="/order" className="font-medium text-mondy-red underline-offset-2 hover:underline">

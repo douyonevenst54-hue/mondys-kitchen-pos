@@ -29,6 +29,7 @@ type Props = {
   logoUrl: string | null;
   hasOpenShift: boolean;
   shiftStartedAt: Date | string | null;
+  newMessages?: number;
 };
 
 export function CashierShell({
@@ -43,6 +44,7 @@ export function CashierShell({
   logoUrl,
   hasOpenShift,
   shiftStartedAt,
+  newMessages = 0,
 }: Props) {
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(
     categories[0]?.id ?? null,
@@ -67,6 +69,7 @@ export function CashierShell({
           onSearchChange={setSearchValue}
           signOutAction={signOutAction}
           logoUrl={logoUrl}
+          newMessages={newMessages}
           hasOpenShift={hasOpenShift}
           shiftStartedAt={shiftStartedAt}
         />
