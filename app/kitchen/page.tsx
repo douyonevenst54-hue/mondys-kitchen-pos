@@ -6,7 +6,7 @@ import { getKitchenBoard } from "@/lib/kitchen";
 import { getSettings } from "@/lib/menu";
 import { KitchenDisplay } from "@/components/kitchen/KitchenDisplay";
 
-export const metadata: Metadata = { title: "Kitchen · Rosewood Cafe", robots: { index: false } };
+export const metadata: Metadata = { title: "Kitchen", robots: { index: false } };
 
 export default async function KitchenPage() {
   await connection();

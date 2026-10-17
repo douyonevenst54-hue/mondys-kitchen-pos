@@ -1,6 +1,10 @@
+"use client";
+
+import { useBrand } from "./BrandProvider";
+
 /**
- * "ROSEWOOD CAFE / by Mondy's", set like the printed menu's masthead:
- * heavy capitals, a small "by Mondy's" underneath. Pure text, so it prints
+ * The business name set like a printed menu's masthead: heavy capitals, the
+ * tagline (e.g. "by Mondy's") small underneath. Both come from Brand settings. Pure text, so it prints
  * crisply on receipts and needs no image file.
  */
 type Size = "sm" | "md" | "lg" | "xl";
@@ -22,12 +26,13 @@ export function Wordmark({
   className?: string;
 }) {
   const s = SIZES[size];
+  const brand = useBrand();
   return (
     <div className={`leading-none ${align === "center" ? "text-center" : "text-left"} ${className}`}>
       <p className={`font-display font-black uppercase tracking-[-0.01em] ${s.name}`}>
-        Rosewood Cafe
+        {brand.wordmark}
       </p>
-      <p className={`mt-1 font-sans font-medium opacity-70 ${s.by}`}>by Mondy&apos;s</p>
+      {brand.tagline && <p className={`mt-1 font-sans font-medium opacity-70 ${s.by}`}>{brand.tagline}</p>}
     </div>
   );
 }

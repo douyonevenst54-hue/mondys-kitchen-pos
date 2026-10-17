@@ -9,7 +9,7 @@ import { emailStatus } from "@/lib/notify";
 import { audienceCount } from "@/lib/campaigns";
 import { PromotionsBoard, type PromoRow } from "@/components/admin/PromotionsBoard";
 
-export const metadata: Metadata = { title: "Promotions · Rosewood Cafe", robots: { index: false } };
+export const metadata: Metadata = { title: "Promotions", robots: { index: false } };
 
 export default async function PromotionsPage() {
   await connection();

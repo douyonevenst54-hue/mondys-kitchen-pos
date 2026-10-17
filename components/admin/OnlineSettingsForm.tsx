@@ -2,12 +2,16 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useBrand } from "@/components/brand/BrandProvider";
+import { contrastWithWhite, isHexColor } from "@/lib/brand-shared";
 import {
   ArrowLeft,
   Power,
   Clock,
   Calendar,
   CalendarClock,
+  Palette,
   CheckCircle2,
   AlertCircle,
   Store,
@@ -18,6 +22,7 @@ import {
   setOnlinePrepTime,
   setRestaurantDetails,
   setAllowPreorders,
+  setBrand,
 } from "@/app/admin/online-settings/actions";
 
 const DAYS = [
@@ -67,6 +72,7 @@ export function OnlineSettingsForm({
           </h1>
         </header>
 
+        <BrandSection />
         <CardStatusLine card={card} />
         <section aria-labelledby="notify-title" className="rounded-2xl bg-white p-5 ring-1 ring-mondy-border">
           <h2 id="notify-title" className="font-display text-lg font-semibold text-mondy-ink">
@@ -141,7 +147,7 @@ function CardStatusLine({ card }: { card: CardInfo }) {
         </p>
       )}
       {!card.enabled && (
-        <p className="mt-1 text-xs text-mondy-muted">Fix it in Vercel → Settings → Environment Variables (Production), then redeploy.</p>
+        <p className="mt-1 text-xs text-mondy-ink">Fix it in Vercel → Settings → Environment Variables (Production), then redeploy.</p>
       )}
     </section>
   );
@@ -200,7 +206,7 @@ function DetailsSection({ initial }: { initial: Details }) {
         </label>
         <label className="block font-sans text-sm font-medium text-mondy-ink">
           Email <span className="font-normal text-mondy-muted">(optional)</span>
-          <input className={field} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@mondyskitchen.com" />
+          <input className={field} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="hello@yourrestaurant.com" />
         </label>
         <button
           type="button"
@@ -293,6 +299,120 @@ function PauseSection({ initialPaused }: { initialPaused: boolean }) {
               : "Pause orders"}
         </button>
       </div>
+      {message && <StatusMessage message={message} />}
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Brand
+// ─────────────────────────────────────────────────────────────────────────────
+
+function BrandSection() {
+  const brand = useBrand();
+  const router = useRouter();
+  const [f, setF] = useState({
+    name: brand.name,
+    brandName: brand.wordmark === brand.name ? "" : brand.wordmark,
+    brandTagline: brand.tagline ?? "",
+    brandColor: brand.color,
+    clubName: brand.clubName,
+    rewardsName: brand.rewardsName,
+  });
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [isPending, startTransition] = useTransition();
+  const readable = isHexColor(f.brandColor) && contrastWithWhite(f.brandColor) >= 4.5;
+  const field =
+    "mt-1 block h-10 w-full rounded-lg border border-mondy-border bg-white px-3 font-sans text-sm text-mondy-ink focus:outline-none focus:ring-2 focus:ring-mondy-red/40";
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
+
+  return (
+    <section aria-labelledby="brand-title" className="rounded-2xl bg-white p-5 ring-1 ring-mondy-border">
+      <h2 id="brand-title" className="flex items-center gap-2 font-display text-lg font-semibold text-mondy-ink">
+        <Palette className="h-5 w-5 text-mondy-red" aria-hidden />
+        Brand
+      </h2>
+      <p className="mt-1 font-sans text-xs text-mondy-muted">
+        Shown on the order page, register, emails, receipts and page titles.
+      </p>
+      <form
+        className="mt-4 grid gap-3 sm:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setMessage(null);
+          startTransition(async () => {
+            const r = await setBrand(f);
+            if (r.ok) {
+              setMessage({ type: "success", text: "Brand saved" });
+              router.refresh();
+            } else setMessage({ type: "error", text: r.error });
+          });
+        }}
+      >
+        <label className="font-sans text-sm font-medium text-mondy-ink sm:col-span-2">
+          Business name (full)
+          <input className={field} value={f.name} onChange={set("name")} maxLength={80} required placeholder="Rosewood Cafe by Mondy's" />
+        </label>
+        <label className="font-sans text-sm font-medium text-mondy-ink">
+          Big name on the menu <span className="font-normal text-mondy-muted">(optional)</span>
+          <input className={field} value={f.brandName} onChange={set("brandName")} maxLength={40} placeholder="Rosewood Cafe" />
+        </label>
+        <label className="font-sans text-sm font-medium text-mondy-ink">
+          Small line under it <span className="font-normal text-mondy-muted">(optional)</span>
+          <input className={field} value={f.brandTagline} onChange={set("brandTagline")} maxLength={40} placeholder="by Mondy's" />
+        </label>
+        <label className="font-sans text-sm font-medium text-mondy-ink">
+          Rewards program name
+          <input className={field} value={f.rewardsName} onChange={set("rewardsName")} maxLength={40} />
+        </label>
+        <label className="font-sans text-sm font-medium text-mondy-ink">
+          News corner name
+          <input className={field} value={f.clubName} onChange={set("clubName")} maxLength={30} />
+        </label>
+        <div className="font-sans text-sm font-medium text-mondy-ink">
+          <label htmlFor="brand-color">Main color</label>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              id="brand-color"
+              type="color"
+              value={isHexColor(f.brandColor) ? f.brandColor : "#8b5e3c"}
+              onChange={set("brandColor")}
+              className="h-10 w-14 cursor-pointer rounded-lg border border-mondy-border bg-white"
+            />
+            <input
+              aria-label="Main color (hex)"
+              className={`${field} mt-0 w-28 uppercase`}
+              value={f.brandColor}
+              onChange={set("brandColor")}
+              maxLength={7}
+            />
+          </div>
+          {!readable && (
+            <p className="mt-1 text-xs text-mondy-red-dark">Too light for white text. Pick a darker shade.</p>
+          )}
+        </div>
+        <div className="flex items-end">
+          <div className="w-full rounded-xl bg-mondy-cream p-3 text-center" aria-hidden>
+            <p className="font-display text-lg font-black uppercase leading-none">{f.brandName || f.name}</p>
+            {f.brandTagline && <p className="mt-0.5 text-xs opacity-70">{f.brandTagline}</p>}
+            <span
+              className="mt-2 inline-block rounded-full px-3 py-1 text-xs font-semibold text-white"
+              style={{ background: isHexColor(f.brandColor) ? f.brandColor : undefined }}
+            >
+              Add to order
+            </span>
+          </div>
+        </div>
+        <div className="sm:col-span-2">
+          <button
+            type="submit"
+            disabled={isPending || !readable}
+            className="rounded-xl bg-mondy-red px-4 py-2.5 font-display text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {isPending ? "Saving..." : "Save brand"}
+          </button>
+        </div>
+      </form>
       {message && <StatusMessage message={message} />}
     </section>
   );
@@ -405,6 +525,7 @@ function PrepTimeSection({ initialPrepTime }: { initialPrepTime: number }) {
       <div className="mt-4 flex items-center gap-3">
         <input
           type="range"
+          aria-label="Prep time in minutes (slider)"
           min={5}
           max={60}
           step={5}
@@ -414,6 +535,7 @@ function PrepTimeSection({ initialPrepTime }: { initialPrepTime: number }) {
         />
         <input
           type="number"
+          aria-label="Prep time in minutes"
           min={5}
           max={120}
           step={5}
@@ -540,6 +662,7 @@ function HoursSection({
               <>
                 <input
                   type="time"
+                  aria-label={`${label} opens`}
                   value={hours[key].open}
                   onChange={(e) => updateDay(key, "open", e.target.value)}
                   className="h-8 rounded-md border border-mondy-border bg-white px-2 font-sans text-xs text-mondy-ink focus:outline-none focus:ring-1 focus:ring-mondy-red/40"
@@ -547,6 +670,7 @@ function HoursSection({
                 <span className="text-mondy-muted">–</span>
                 <input
                   type="time"
+                  aria-label={`${label} closes`}
                   value={hours[key].close}
                   onChange={(e) => updateDay(key, "close", e.target.value)}
                   className="h-8 rounded-md border border-mondy-border bg-white px-2 font-sans text-xs text-mondy-ink focus:outline-none focus:ring-1 focus:ring-mondy-red/40"

@@ -8,7 +8,7 @@ import { accountsFrom, dailyTotals, defaultRange, isValidRange, sumTotals } from
 import { addDays, businessDate } from "@/lib/business-date";
 import { AccountingView } from "@/components/reports/AccountingView";
 
-export const metadata: Metadata = { title: "Tax & accounting · Rosewood Cafe", robots: { index: false } };
+export const metadata: Metadata = { title: "Tax & accounting", robots: { index: false } };
 
 type Search = Promise<{ from?: string; to?: string }>;
 

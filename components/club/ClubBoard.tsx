@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -36,20 +37,20 @@ type Draft = {
   isPublished: boolean;
 };
 
-const EXAMPLES: Record<Kind, { title: string; body: string }> = {
+const examples = (club: string): Record<Kind, { title: string; body: string }> => ({
   DRAW: {
     title: "Win 2 free dishes!",
-    body: "Every order this week enters you in our PS Club draw. We'll pick one family and announce the winner right here.",
+    body: `Every order this week enters you in our ${club} draw. We'll pick one family and announce the winner right here.`,
   },
   WINNER: {
     title: "Congratulations to the Joseph family!",
-    body: "They won 2 dishes in this week's PS Club draw. Thank you to everyone who entered — next draw coming soon!",
+    body: `They won 2 dishes in this week's ${club} draw. Thank you to everyone who entered — next draw coming soon!`,
   },
   NEWS: {
-    title: "A new Passport Special this week",
-    body: "Our chef is bringing a new flavor from around the world. Come taste it before it's gone!",
+    title: "Something new this week",
+    body: "Our chef is bringing a new dish to the menu. Come taste it before it's gone!",
   },
-};
+});
 
 const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "DRAW", label: "Draw" },
@@ -73,6 +74,7 @@ function blank(today: string): Draft {
 }
 
 export function ClubBoard({ posts, today }: { posts: Post[]; today: string }) {
+  const brand = useBrand();
   const router = useRouter();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -166,9 +168,9 @@ export function ClubBoard({ posts, today }: { posts: Post[]; today: string }) {
             )}
           </div>
           <div>
-            <h1 className="font-display text-2xl font-black">PS Club</h1>
+            <h1 className="font-display text-2xl font-black">{brand.clubName}</h1>
             <p className="mt-0.5 text-sm text-mondy-muted">
-              Passport Special Club corner on the online order page. Announce giveaway draws, winners and anything that
+              The news corner on the online order page. Announce giveaway draws, winners and anything that
               matters to your customers.
             </p>
           </div>
@@ -327,7 +329,8 @@ function Editor({
   onSave: () => void;
 }) {
   const set = (patch: Partial<Draft>) => onChange({ ...draft, ...patch });
-  const example = EXAMPLES[draft.kind];
+  const brand = useBrand();
+  const example = examples(brand.clubName)[draft.kind];
 
   return (
     <section aria-label={draft.id ? "Edit post" : "New post"} className="rounded-2xl bg-white p-5 ring-1 ring-mondy-border">

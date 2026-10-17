@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
 import { PUBLIC_ORDER_HOSTS } from "@/lib/public-hosts";
 import { reconcileLoyalty } from "@/lib/loyalty";
+import { getBrand } from "@/lib/brand";
 
 /**
  * Customer updates for online orders: received, ready for pickup, cancelled.
@@ -19,7 +20,8 @@ import { reconcileLoyalty } from "@/lib/loyalty";
  */
 
 export function emailStatus(): { enabled: boolean; from: string; problem: string | null } {
-  const from = process.env.NOTIFY_FROM_EMAIL || "Rosewood Cafe <orders@mondyskitchen.com>";
+  const host = (process.env.PUBLIC_SITE_URL ?? "").replace(/^https?:\/\//, "").replace(/[:/].*$/, "") || PUBLIC_ORDER_HOSTS.find((h) => !h.startsWith("www.")) || "example.com";
+  const from = process.env.NOTIFY_FROM_EMAIL || `orders@${host.replace(/^www\./, "")}`;
   if (!process.env.RESEND_API_KEY) return { enabled: false, from, problem: "RESEND_API_KEY is not set" };
   return { enabled: true, from, problem: null };
 }
@@ -32,7 +34,7 @@ export function smsStatus(): { enabled: boolean; problem: string | null } {
 export function siteUrl(): string {
   const explicit = process.env.PUBLIC_SITE_URL?.replace(/\/$/, "");
   if (explicit) return explicit;
-  const host = PUBLIC_ORDER_HOSTS.find((h) => h.startsWith("www.")) ?? PUBLIC_ORDER_HOSTS[0] ?? "mondyskitchen.com";
+  const host = PUBLIC_ORDER_HOSTS.find((h) => h.startsWith("www.")) ?? PUBLIC_ORDER_HOSTS[0] ?? "example.com";
   return `https://${host}`;
 }
 
@@ -101,7 +103,7 @@ export async function sendOrderNotifications(orderId: string): Promise<Kind[]> {
     const claimed = await prisma.order.updateMany({ where: { id: o.id, [field]: null }, data: { [field]: new Date() } });
     if (claimed.count === 0) continue;
 
-    const msg = compose(kind, o, settings);
+    const msg = compose(kind, o, { ...settings, color: (await getBrand()).color });
     if (wantsEmail) {
       await sendEmail({
         to: o.customerEmail!,
@@ -145,7 +147,7 @@ const money = (v: { toString(): string }) => `$${Number(v.toString()).toFixed(2)
 function compose(
   kind: Kind,
   o: OrderForMsg,
-  s: { name: string; address: string | null; phone: string | null; timezone: string },
+  s: { name: string; address: string | null; phone: string | null; timezone: string; color: string },
 ) {
   const code = o.onlineConfirmationCode ?? "";
   const link = `${siteUrl()}/order/status/${o.id}`;
@@ -207,7 +209,7 @@ function compose(
   const tel = s.phone ? s.phone.replace(/\D/g, "") : "";
   const html = `<!doctype html><html lang="en"><body style="margin:0;background:#f6f1e7;font-family:Arial,Helvetica,sans-serif;color:#231f1a">
 <div style="max-width:520px;margin:0 auto;padding:24px 16px">
-<p style="margin:0 0 4px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8a5a3b">${esc(s.name)}</p>
+<p style="margin:0 0 4px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:${s.color}">${esc(s.name)}</p>
 <h1 style="margin:0 0 12px;font-size:24px;line-height:1.25">${esc(headline)}</h1>
 <p style="margin:0 0 16px;font-size:16px;line-height:1.5">${body}</p>
 <div style="background:#fff;border-radius:14px;padding:16px;margin:0 0 16px">
@@ -218,7 +220,7 @@ function compose(
 </div>
 <p style="margin:0 0 20px"><a href="${link}" style="display:inline-block;background:#231f1a;color:#fff;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:bold">See your order</a></p>
 <p style="margin:0;font-size:14px;line-height:1.5;color:#6b6157">${s.address ? `${esc(s.address)}<br>` : ""}${
-    s.phone ? `<a href="tel:+1${tel}" style="color:#8a5a3b">${esc(s.phone)}</a>` : ""
+    s.phone ? `<a href="tel:+1${tel}" style="color:${s.color}">${esc(s.phone)}</a>` : ""
   }</p>
 </div></body></html>`;
   const text = [
@@ -238,8 +240,13 @@ function compose(
 // Providers (plain HTTPS, no extra packages)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** "Name <orders@…>": adds the business name when the address has none. */
+export function fromWithName(from: string, name: string): string {
+  return from.includes("<") ? from : `${name.replace(/[<>"]/g, "")} <${from}>`;
+}
+
 export async function sendEmail(m: { to: string; subject: string; html: string; text: string; replyTo?: string }) {
-  const { from } = emailStatus();
+  const from = fromWithName(emailStatus().from, (await getBrand()).name);
   const res = await fetch(process.env.RESEND_API_URL || "https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },

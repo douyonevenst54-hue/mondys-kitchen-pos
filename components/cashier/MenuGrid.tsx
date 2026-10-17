@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -227,6 +228,7 @@ function MenuTile({
   item: MenuItemWithModifiers;
   onTap: (item: MenuItemWithModifiers) => void;
 }) {
+  const brand = useBrand();
   const soldOut = !item.isAvailable;
 
   return (
@@ -246,7 +248,7 @@ function MenuTile({
           <p className="mb-1 flex items-center gap-1.5 font-sans text-[11px] font-semibold text-mondy-red-dark">
             {item.menuNumber != null && <span className="tabular">No. {item.menuNumber}</span>}
             {item.isSignature && (
-              <span title="Rosewood Signature" aria-label="Rosewood Signature">
+              <span title={brand.signatureLabel} aria-label={brand.signatureLabel}>
                 ★ Signature
               </span>
             )}

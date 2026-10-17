@@ -1,4 +1,5 @@
 "use client";
+import { CART_KEY } from "./OnlineOrderApp";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -34,7 +35,7 @@ export function OrderStatusView({
   useEffect(() => {
     if (order.status === "OPEN") return;
     try {
-      localStorage.removeItem("rosewood_cart_v1");
+      localStorage.removeItem(CART_KEY);
     } catch {
       /* storage blocked */
     }

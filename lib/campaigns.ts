@@ -3,7 +3,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
-import { emailStatus, siteUrl } from "@/lib/notify";
+import { emailStatus, fromWithName, siteUrl } from "@/lib/notify";
+import { getBrand } from "@/lib/brand";
 
 /**
  * Email campaigns to customers who ticked "Email me specials" at checkout.
@@ -47,7 +48,13 @@ const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 
 type Promo = { code: string; label: string } | null;
 
-function render(subject: string, message: string, promo: Promo, s: { name: string; address: string | null; phone: string | null }, unsub: string) {
+function render(
+  subject: string,
+  message: string,
+  promo: Promo,
+  s: { name: string; address: string | null; phone: string | null; color: string; wordmark: string },
+  unsub: string,
+) {
   const paras = message
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 14px;font-size:16px;line-height:1.55">${esc(p).replace(/\n/g, "<br>")}</p>`)
@@ -55,12 +62,12 @@ function render(subject: string, message: string, promo: Promo, s: { name: strin
   const order = `${siteUrl()}/order`;
   const html = `<!doctype html><html lang="en"><body style="margin:0;background:#f6f1e7;font-family:Arial,Helvetica,sans-serif;color:#231f1a">
 <div style="max-width:520px;margin:0 auto;padding:24px 16px">
-<p style="margin:0 0 6px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#8a5a3b">${esc(s.name)}</p>
+<p style="margin:0 0 6px;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:${s.color}">${esc(s.name)}</p>
 <h1 style="margin:0 0 16px;font-size:24px;line-height:1.25">${esc(subject)}</h1>
 ${paras}
 ${promo ? `<div style="background:#fff;border-radius:14px;padding:16px;margin:0 0 16px;text-align:center"><p style="margin:0;font-size:13px;color:#6b6157">${esc(promo.label)}</p><p style="margin:4px 0 0;font-size:26px;font-weight:bold;letter-spacing:2px">${esc(promo.code)}</p></div>` : ""}
 <p style="margin:0 0 24px"><a href="${order}" style="display:inline-block;background:#231f1a;color:#fff;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:bold">Order online</a></p>
-<p style="margin:0;font-size:12px;line-height:1.5;color:#6b6157">You're getting this because you asked for Rosewood specials when you ordered.
+<p style="margin:0;font-size:12px;line-height:1.5;color:#6b6157">You're getting this because you asked for ${esc(s.wordmark)} specials when you ordered.
 <a href="${unsub}" style="color:#6b6157">Unsubscribe</a>.<br>${esc(s.name)}${s.address ? ` · ${esc(s.address)}` : ""}${s.phone ? ` · ${esc(s.phone)}` : ""}</p>
 </div></body></html>`;
   const text = `${subject}\n\n${message}\n\n${promo ? `${promo.label}: ${promo.code}\n\n` : ""}Order online: ${order}\n\nUnsubscribe: ${unsub}\n${s.name}${s.address ? `, ${s.address}` : ""}`;
@@ -87,9 +94,10 @@ async function promoFor(discountId: string | null): Promise<Promo> {
 
 /** One email to one address, for checking how it looks. */
 export async function sendTestEmail(to: string, subject: string, message: string, discountId: string | null): Promise<void> {
-  const s = await getSettings();
+  const b = await getBrand();
+  const s = { ...(await getSettings()), color: b.color, wordmark: b.wordmark };
   const { html, text } = render(subject, message, await promoFor(discountId), s, `${siteUrl()}/order`);
-  await postBatch([{ from: emailStatus().from, to: [to], subject: `[Test] ${subject}`, html, text }]);
+  await postBatch([{ from: fromWithName(emailStatus().from, b.name), to: [to], subject: `[Test] ${subject}`, html, text }]);
 }
 
 /** Send a saved campaign to everyone opted in, in batches of 100, after the response. */
@@ -105,14 +113,15 @@ export function queueCampaign(campaignId: string): void {
 async function sendCampaign(campaignId: string): Promise<void> {
   const c = await prisma.campaign.findUnique({ where: { id: campaignId } });
   if (!c || c.finishedAt) return;
-  const s = await getSettings();
+  const b = await getBrand();
+  const s = { ...(await getSettings()), color: b.color, wordmark: b.wordmark };
   const promo = await promoFor(c.discountId);
   const people = await prisma.customer.findMany({
     where: { marketingOptIn: true, email: { not: null } },
     select: { id: true, email: true },
   });
   await prisma.campaign.update({ where: { id: c.id }, data: { recipients: people.length } });
-  const from = emailStatus().from;
+  const from = fromWithName(emailStatus().from, b.name);
   let sent = 0;
   let failed = 0;
   for (let i = 0; i < people.length; i += 100) {

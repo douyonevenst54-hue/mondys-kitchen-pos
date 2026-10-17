@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSettings } from "@/lib/menu";
@@ -6,6 +7,8 @@ import { verifySession } from "@/lib/session";
 import { getCardStatus, webhookConfigured } from "@/lib/stripe-config";
 import { getCloverStatus } from "@/lib/clover";
 import { emailStatus, smsStatus } from "@/lib/notify";
+
+export const metadata: Metadata = { title: "Online settings" };
 
 type Session = { staffId: string; name: string; role: string };
 

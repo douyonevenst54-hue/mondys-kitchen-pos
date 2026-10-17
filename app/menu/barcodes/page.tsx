@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getManagerFromSession } from "@/lib/staff";
 import { BarcodeBoard } from "@/components/menu/BarcodeBoard";
 
-export const metadata: Metadata = { title: "Barcodes · Rosewood Cafe", robots: { index: false } };
+export const metadata: Metadata = { title: "Barcodes", robots: { index: false } };
 
 export default async function BarcodesPage() {
   await connection();

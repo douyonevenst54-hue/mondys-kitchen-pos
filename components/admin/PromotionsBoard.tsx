@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -297,6 +298,7 @@ function PromoForm({ initial, onDone }: { initial: PromoRow | null; onDone: () =
 }
 
 function CampaignForm({ promos, audience, email }: { promos: PromoRow[]; audience: number; email: { enabled: boolean; problem: string | null } }) {
+  const brand = useBrand();
   const router = useRouter();
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
@@ -315,7 +317,7 @@ function CampaignForm({ promos, audience, email }: { promos: PromoRow[]; audienc
       </h2>
       <p className="mt-1 text-sm text-mondy-muted">
         Goes to the {audience} customer{audience === 1 ? "" : "s"} who asked for specials at checkout. Every email has an
-        unsubscribe link. For the PS Club corner on the order page, use PS Club posts.
+        unsubscribe link. For the news corner on the order page, use {brand.clubName} posts.
       </p>
       {!email.enabled && (
         <p className="mt-3 rounded-lg bg-mondy-yellow-soft/60 px-3 py-2 text-sm">Email is off: {email.problem}. Set it up in Vercel to send.</p>

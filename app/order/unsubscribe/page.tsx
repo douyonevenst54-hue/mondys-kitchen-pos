@@ -4,7 +4,7 @@ import { getSettings } from "@/lib/menu";
 import { checkUnsubscribeToken } from "@/lib/campaigns";
 import { UnsubscribeButton } from "@/components/online/UnsubscribeButton";
 
-export const metadata: Metadata = { title: "Unsubscribe · Rosewood Cafe", robots: { index: false } };
+export const metadata: Metadata = { title: "Unsubscribe", robots: { index: false } };
 
 type Search = Promise<{ u?: string; t?: string }>;
 

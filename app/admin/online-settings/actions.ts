@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { verifySession } from "@/lib/session";
+import { contrastWithWhite } from "@/lib/brand-shared";
 
 type Session = { staffId: string; name: string; role: string };
 
@@ -192,5 +193,43 @@ export async function setAllowPreorders(allow: boolean) {
   await prisma.restaurantSettings.update({ where: { id: settings.id }, data: { allowPreorders: allow === true } });
   revalidatePath("/admin/online-settings");
   revalidatePath("/order");
+  return { ok: true as const };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Brand: business name, wordmark, color and feature names (white-label)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BrandSchema = z.object({
+  name: z.string().trim().min(2, "Type the business name").max(80),
+  brandName: z.string().trim().max(40).default(""),
+  brandTagline: z.string().trim().max(40).default(""),
+  brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Pick a color"),
+  clubName: z.string().trim().max(30).default(""),
+  rewardsName: z.string().trim().max(40).default(""),
+});
+
+export async function setBrand(input: z.input<typeof BrandSchema>) {
+  await requireManagerOrOwner();
+  const p = BrandSchema.safeParse(input);
+  if (!p.success) return { ok: false as const, error: p.error.issues[0]?.message ?? "Check the brand" };
+  if (contrastWithWhite(p.data.brandColor) < 4.5) {
+    return { ok: false as const, error: "That color is too light: white text on buttons would be hard to read. Pick a darker shade." };
+  }
+  const settings = await prisma.restaurantSettings.findFirst();
+  if (!settings) return { ok: false as const, error: "Settings not found" };
+  const d = p.data;
+  await prisma.restaurantSettings.update({
+    where: { id: settings.id },
+    data: {
+      name: d.name,
+      brandName: d.brandName || null,
+      brandTagline: d.brandTagline || null,
+      brandColor: d.brandColor.toLowerCase(),
+      clubName: d.clubName || null,
+      rewardsName: d.rewardsName || null,
+    },
+  });
+  revalidatePath("/", "layout");
   return { ok: true as const };
 }

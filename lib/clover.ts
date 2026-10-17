@@ -64,7 +64,8 @@ export async function createCloverCheckout(args: {
   total: number;
   summary: string;
   customer: { name: string; email: string | null; phone: string };
-  returnBase: string; // https://mondyskitchen.com
+  returnBase: string; // the public order site, e.g. https://www.example.com
+  businessName?: string;
 }): Promise<{ href: string; sessionId: string }> {
   const [firstName, ...rest] = args.customer.name.trim().split(/\s+/);
   const body = {
@@ -77,7 +78,7 @@ export async function createCloverCheckout(args: {
     shoppingCart: {
       lineItems: [
         {
-          name: `Rosewood Cafe order ${args.code}`.slice(0, 127),
+          name: `${args.businessName ?? "Online"} order ${args.code}`.slice(0, 127),
           price: Math.round(args.total * 100), // cents
           unitQty: 1,
           note: args.summary.slice(0, 255),
@@ -100,7 +101,7 @@ export async function createCloverCheckout(args: {
         "content-type": "application/json",
         authorization: `Bearer ${read("CLOVER_ECOMM_PRIVATE_KEY")}`,
         "X-Clover-Merchant-Id": read("CLOVER_MERCHANT_ID"),
-        "User-Agent": "RosewoodCafePOS/1.0",
+        "User-Agent": "RestaurantPOS/1.0",
       },
       body: JSON.stringify(body),
       cache: "no-store",

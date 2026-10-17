@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import { useEffect, useState, useTransition } from "react";
 import { Tag, Percent, DollarSign, Gift, Star, X } from "lucide-react";
@@ -22,6 +23,7 @@ type Props = {
 type Mode = "list" | "custom-percent" | "custom-amount" | "comp" | "manager-gate" | "rewards";
 
 export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) {
+  const brand = useBrand();
   const { applyDiscount } = useCart();
   const [presets, setPresets] = useState<ActiveDiscount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,7 +172,7 @@ export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) 
               {mode === "custom-amount" && "Custom $ off"}
               {mode === "comp" && "Manager comp"}
               {mode === "manager-gate" && "Manager approval"}
-              {mode === "rewards" && "Rosewood Rewards"}
+              {mode === "rewards" && brand.rewardsName}
             </h3>
             <p className="mt-1 font-sans text-sm text-mondy-muted tabular">
               Order subtotal: {formatMoney(subtotal)}
@@ -351,7 +353,7 @@ export function DiscountModal({ staffId, staffRole, subtotal, onClose }: Props) 
                   setRwPhone(e.target.value);
                 }}
                 onKeyDown={(e) => e.key === "Enter" && lookUpRewards()}
-                placeholder="(978) 555-0123"
+                placeholder="(555) 555-0123"
                 className="mt-1 h-12 w-full rounded-xl border border-mondy-border bg-white px-4 font-display text-xl tabular text-mondy-ink focus:outline-none focus:ring-2 focus:ring-mondy-red/40"
                 autoFocus
               />

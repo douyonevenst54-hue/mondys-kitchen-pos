@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
@@ -8,8 +9,9 @@ export type ClubPost = ClubCardPost & { id: string };
 
 const FIRST = 2;
 
-/** "PS Club" corner on the order page. Renders nothing when there are no posts. */
+/** The news & giveaways corner on the order page (name from Brand settings). Renders nothing when there are no posts. */
 export function ClubCorner({ posts }: { posts: ClubPost[] }) {
+  const brand = useBrand();
   const [all, setAll] = useState(false);
   if (posts.length === 0) return null;
   const shown = all ? posts : posts.slice(0, FIRST);
@@ -23,9 +25,9 @@ export function ClubCorner({ posts }: { posts: ClubPost[] }) {
     >
       <div className="mb-4 text-center">
         <h2 id="ps-club-title" className="font-display text-xl font-black uppercase tracking-wide text-mondy-red">
-          PS Club
+          {brand.clubName}
         </h2>
-        <p className="text-sm italic text-mondy-muted">Passport Special Club · draws, winners &amp; news</p>
+        <p className="text-sm italic text-mondy-muted">Draws, winners &amp; news</p>
       </div>
       <div className="space-y-3">
         {shown.map((p) => (

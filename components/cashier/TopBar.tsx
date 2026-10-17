@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import Image from "next/image";
 import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, ChefHat, ScanBarcode, Calculator, Percent, Star, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare } from "lucide-react";
@@ -29,6 +30,7 @@ export function TopBar({
   newMessages = 0,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const brand = useBrand();
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-mondy-border bg-white px-3 sm:gap-4 sm:px-5">
@@ -37,7 +39,7 @@ export function TopBar({
         {logoUrl && (
           <Image
             src={logoUrl}
-            alt="Rosewood Cafe by Mondy's"
+            alt={brand.name}
             width={36}
             height={36}
             priority
@@ -46,11 +48,11 @@ export function TopBar({
         )}
         <div className="flex flex-col leading-none">
           <span className="font-display text-[15px] font-black uppercase tracking-tight text-mondy-ink sm:text-base">
-            Rosewood<span className="hidden sm:inline"> Cafe</span>
+            {brand.wordmark}
           </span>
-          <span className="mt-0.5 font-sans text-[10px] font-medium text-mondy-red-dark">
-            by Mondy&apos;s
-          </span>
+          {brand.tagline && (
+            <span className="mt-0.5 font-sans text-[10px] font-medium text-mondy-red-dark">{brand.tagline}</span>
+          )}
         </div>
       </div>
 
@@ -229,7 +231,7 @@ export function TopBar({
                   className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
                 >
                   <Megaphone className="h-4 w-4 text-mondy-muted" aria-hidden />
-                  PS Club posts
+                  {brand.clubName} posts
                 </a>
               )}
               {(staffRole === "OWNER" || staffRole === "MANAGER") && (

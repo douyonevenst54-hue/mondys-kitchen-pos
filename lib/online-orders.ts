@@ -434,6 +434,7 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
       const { href, sessionId } = await createCloverCheckout({
         orderId: order.id,
         code: order.onlineConfirmationCode ?? "",
+        businessName: settings.name,
         total,
         summary,
         customer: { name: input.customerName, email: input.customerEmail, phone: input.customerPhone },
@@ -458,7 +459,7 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
         amount: toCents(total),
         currency: "usd",
         automatic_payment_methods: { enabled: true },
-        description: `Rosewood Cafe online order ${order.onlineConfirmationCode}`,
+        description: `${settings.name} online order ${order.onlineConfirmationCode}`,
         receipt_email: input.customerEmail ?? undefined,
         metadata: { orderId: order.id, confirmationCode: order.onlineConfirmationCode ?? "" },
       },

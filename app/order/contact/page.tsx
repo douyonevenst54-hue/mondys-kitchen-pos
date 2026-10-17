@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
+import { getBrand } from "@/lib/brand";
 import { connection } from "next/server";
 import { getSettings } from "@/lib/menu";
 import { businessDate } from "@/lib/business-date";
 import { ContactForms, type ContactTab } from "@/components/online/ContactForms";
 
-export const metadata: Metadata = {
-  title: "Contact, catering & feedback · Rosewood Cafe by Mondy's",
-  description: "Questions, catering for your event, or feedback for Rosewood Cafe by Mondy's.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = await getBrand();
+  return { title: "Contact, catering & feedback", description: `Questions, catering for your event, or feedback for ${brand.name}.` };
+}
 
 type Search = Promise<{ type?: string; order?: string }>;
 

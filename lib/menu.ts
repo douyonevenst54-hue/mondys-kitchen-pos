@@ -134,14 +134,14 @@ export async function getSettings() {
     (settings?.businessHours as Record<string, string | null> | null) ?? null;
 
   return {
-    name: settings?.name ?? "Rosewood Cafe by Mondy's",
+    name: settings?.name ?? "Our Restaurant",
     address: settings?.address ?? null,
     phone: settings?.phone ?? null,
     email: settings?.email ?? null,
     taxRate: settings ? Number(settings.taxRate) : 0.0625,
     currency: settings?.currency ?? "USD",
     receiptFooter:
-      settings?.receiptFooter ?? "Thank you for visiting Rosewood Cafe by Mondy's!",
+      settings?.receiptFooter ?? `Thank you for visiting ${settings?.name ?? "us"}!`,
     timezone: settings?.timezone ?? "America/New_York",
     defaultDeliveryFee,
     // Online ordering

@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -33,6 +34,7 @@ const KIND: Record<Kind, { label: string; icon: typeof Mail }> = {
 const ring = "focus:outline-none focus-visible:ring-2 focus-visible:ring-mondy-red/50";
 
 export function MessagesBoard({ messages, timezone }: { messages: Msg[]; timezone: string }) {
+  const brand = useBrand();
   const router = useRouter();
   const [show, setShow] = useState<"new" | "handled">("new");
   const [kind, setKind] = useState<Kind | "ALL">("ALL");
@@ -182,7 +184,7 @@ export function MessagesBoard({ messages, timezone }: { messages: Msg[]; timezon
                 )}
                 {m.email && (
                   <a
-                    href={`mailto:${m.email}?subject=${encodeURIComponent(m.kind === "CATERING" ? "Your catering request – Rosewood Cafe" : "Rosewood Cafe")}`}
+                    href={`mailto:${m.email}?subject=${encodeURIComponent(m.kind === "CATERING" ? `Your catering request – ${brand.name}` : brand.name)}`}
                     className={`flex items-center gap-1.5 rounded-lg bg-mondy-cream px-3 py-2 text-xs font-semibold ring-1 ring-mondy-border hover:bg-white ${ring}`}
                   >
                     <Mail className="h-3.5 w-3.5" aria-hidden />

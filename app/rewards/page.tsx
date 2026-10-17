@@ -6,7 +6,7 @@ import { getManagerFromSession } from "@/lib/staff";
 import { getSettings } from "@/lib/menu";
 import { RewardsBoard } from "@/components/admin/RewardsBoard";
 
-export const metadata: Metadata = { title: "Rewards · Rosewood Cafe", robots: { index: false } };
+export const metadata: Metadata = { title: "Rewards", robots: { index: false } };
 
 type Search = Promise<{ q?: string }>;
 

@@ -1,0 +1,23 @@
+{
+  "name": "Example Kitchen",
+  "brandName": "Example Kitchen",
+  "brandTagline": "Fresh every day",
+  "brandColor": "#1f5f8b",
+  "clubName": "News & giveaways",
+  "rewardsName": "Example Rewards",
+  "phone": "(555) 555-0100",
+  "address": "1 Main St, Anytown, MA",
+  "email": "hello@example.com",
+  "timezone": "America/New_York",
+  "taxRatePercent": 7,
+  "businessHours": {
+    "sunday": null,
+    "monday": "07:00-21:00",
+    "tuesday": "07:00-21:00",
+    "wednesday": "07:00-21:00",
+    "thursday": "07:00-21:00",
+    "friday": "07:00-21:00",
+    "saturday": "08:00-21:00"
+  },
+  "rewards": { "enabled": true, "pointsPerDollar": 1, "rewardPoints": 100, "rewardValue": 5 }
+}

@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import { useState } from "react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
@@ -51,6 +52,7 @@ export function CardPayment({
 }
 
 function PayForm({ orderId, total }: { orderId: string; total: number }) {
+  const brand = useBrand();
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +100,7 @@ function PayForm({ orderId, total }: { orderId: string; total: number }) {
         {submitting ? "Paying…" : `Pay ${formatMoney(total)}`}
       </button>
       <p className="mt-2 text-center text-xs text-mondy-muted">
-        Card details go straight to Stripe. Rosewood Cafe never sees your card number.
+        Card details go straight to Stripe. {brand.name} never sees your card number.
       </p>
     </div>
   );

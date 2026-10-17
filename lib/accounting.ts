@@ -292,14 +292,20 @@ const usDate = (ymd: string) => {
  * QuickBooks Online journal entries: one balanced entry per day.
  * Import: QuickBooks > Settings (gear) > Import data > Journal entries.
  */
-export async function quickbooksJournalCsv(from: string, to: string, timezone: string, accounts: AccountMap): Promise<string> {
+export async function quickbooksJournalCsv(
+  from: string,
+  to: string,
+  timezone: string,
+  accounts: AccountMap,
+  businessName = "Daily",
+): Promise<string> {
   const days = await dailyTotals(from, to, timezone);
   const rows: (string | number | null)[][] = [["Journal No.", "Journal Date", "Account Name", "Description", "Debits", "Credits"]];
   for (const d of days) {
     if (d.collected === 0 && d.refunds === 0 && d.grossSales === 0) continue;
-    const no = `RW-${d.day.replace(/-/g, "")}`;
+    const no = `SALES-${d.day.replace(/-/g, "")}`;
     const date = usDate(d.day);
-    const desc = `Rosewood Cafe daily sales ${date} (${d.orders} order${d.orders === 1 ? "" : "s"}${d.refunds ? `, ${d.refunds.toFixed(2)} refunded` : ""})`;
+    const desc = `${businessName} daily sales ${date} (${d.orders} order${d.orders === 1 ? "" : "s"}${d.refunds ? `, ${d.refunds.toFixed(2)} refunded` : ""})`;
     // Positive = debit, negative = credit.
     const lines: [AccountKey, number][] = [
       ["cash", d.cash],

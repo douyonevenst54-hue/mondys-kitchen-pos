@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -52,8 +53,8 @@ type CheckoutError = { title: string; detail: string; fix: OrderFix | null };
 
 /* The cart is kept on the customer's phone, so a reload, a phone call, or
    going back from the payment page doesn't empty it. */
-const CART_KEY = "rosewood_cart_v1";
-const CONTACT_KEY = "rosewood_contact_v1";
+export const CART_KEY = "pos_cart_v1";
+const CONTACT_KEY = "pos_contact_v1";
 const CART_TTL_MS = 3 * 60 * 60 * 1000;
 
 function store<T>(key: string, value: T | null) {
@@ -144,6 +145,7 @@ export function OnlineOrderApp({
   textUpdates,
   promos,
 }: Props) {
+  const brand = useBrand();
   const router = useRouter();
   const [cart, setCart] = useState<CartLine[]>([]);
   const [step, setStep] = useState<Step>({ name: "menu" });
@@ -273,7 +275,7 @@ export function OnlineOrderApp({
                   href="#ps-club"
                   className="shrink-0 rounded-full bg-mondy-red px-3.5 py-1.5 text-sm font-semibold text-white transition hover:bg-mondy-red-dark"
                 >
-                  PS Club
+                  {brand.clubName}
                 </a>
               )}
               {menu.map((c) => (
@@ -428,7 +430,7 @@ export function OnlineOrderApp({
               ),
             )}
 
-            <nav aria-label="More from Rosewood" className="mt-12 grid grid-cols-3 gap-2 text-center">
+            <nav aria-label={`More from ${brand.wordmark}`} className="mt-12 grid grid-cols-3 gap-2 text-center">
               {[
                 { href: "/order/contact?type=catering", title: "Catering", sub: "Events & large orders" },
                 { href: "/order/contact", title: "Contact us", sub: "Questions" },
@@ -452,6 +454,14 @@ export function OnlineOrderApp({
                 </p>
               )}
               <p className="mt-1 italic">Please let our team know about any food allergies or dietary concerns when ordering.</p>
+              <p className="mt-4 flex justify-center gap-4">
+                <a href="/order/privacy" className="inline-flex min-h-11 items-center underline">
+                  Privacy
+                </a>
+                <a href="/order/terms" className="inline-flex min-h-11 items-center underline">
+                  Terms
+                </a>
+              </p>
             </footer>
           </main>
 
@@ -595,6 +605,7 @@ function Checkout({
   onPickupPlaced: (orderId: string) => void;
   onCardReady: (orderId: string, clientSecret: string, total: number) => void;
 }) {
+  const brand = useBrand();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   // Promo code and rewards: previews here, re-checked by the server.
@@ -924,17 +935,17 @@ function Checkout({
                 type="tel"
                 inputMode="tel"
                 autoComplete="tel"
-                placeholder="(978) 555-0123"
+                placeholder="(555) 555-0123"
                 required
               />
               <span className="mt-1 block text-xs font-normal text-mondy-muted">
-                Used for this order and your Rosewood Rewards points.
+                Used for this order{rewards?.enabled ? ` and your ${brand.rewardsName} points` : ""}.
               </span>
             </label>
             {rewards?.enabled && (
               <div className="rounded-2xl bg-mondy-yellow-soft/60 px-4 py-3 text-sm" aria-live="polite">
                 <p className="font-semibold">
-                  Rosewood Rewards: {rewards.points} point{rewards.points === 1 ? "" : "s"}
+                  {brand.rewardsName}: {rewards.points} point{rewards.points === 1 ? "" : "s"}
                 </p>
                 {canReward ? (
                   <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-3">
@@ -975,7 +986,7 @@ function Checkout({
                   className="mt-0.5 h-5 w-5 shrink-0 accent-mondy-red"
                 />
                 <span>
-                  <span className="font-medium">Email me Rosewood specials and PS Club news</span>
+                  <span className="font-medium">Email me {brand.wordmark} specials and news</span>
                   <span className="block text-xs text-mondy-muted">A few emails a month at most. Unsubscribe anytime.</span>
                 </span>
               </label>
@@ -991,7 +1002,11 @@ function Checkout({
                 <span>
                   <span className="font-medium">Text me when my order is ready</span>
                   <span className="block text-xs text-mondy-muted">
-                    Order updates only, to the phone above. Msg &amp; data rates may apply. Reply STOP to opt out.
+                    Order updates only, to the phone above. Msg &amp; data rates may apply. Reply STOP to opt out, HELP
+                    for help.{" "}
+                    <a href="/order/terms#sms" className="underline">
+                      Text terms
+                    </a>
                   </span>
                 </span>
               </label>
@@ -1167,6 +1182,17 @@ function Checkout({
                   ? "Continue to payment"
                   : `Place order · ${formatMoney(total)}`}
             </button>
+            <p className="text-center text-xs text-mondy-muted">
+              By placing your order you agree to our{" "}
+              <a href="/order/terms" className="underline">
+                terms
+              </a>{" "}
+              and{" "}
+              <a href="/order/privacy" className="underline">
+                privacy policy
+              </a>
+              .
+            </p>
 
             {restaurantPhone && (
               <p className="text-center text-sm text-mondy-muted">

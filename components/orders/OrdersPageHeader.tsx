@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { getBrand } from "@/lib/brand";
 import { ArrowLeft } from "lucide-react";
 import { resolveLogoUrl } from "@/lib/logo";
 import Image from "next/image";
@@ -10,20 +11,21 @@ type Props = {
   backLabel?: string;
 };
 
-export function OrdersPageHeader({
+export async function OrdersPageHeader({
   title,
   subtitle,
   backHref = "/",
   backLabel = "Back to POS",
 }: Props) {
   const logoUrl = resolveLogoUrl();
+  const brand = await getBrand();
   return (
     <header className="flex items-center justify-between border-b border-mondy-border bg-white px-4 py-3 sm:px-6">
       <div className="flex items-center gap-3">
         {logoUrl && (
           <Image
             src={logoUrl}
-            alt="Rosewood Cafe by Mondy's"
+            alt={brand.name}
             width={32}
             height={32}
             className="h-8 w-8 object-contain"
@@ -31,7 +33,7 @@ export function OrdersPageHeader({
         )}
         <div className="leading-tight">
           <p className="font-sans text-xs font-semibold text-mondy-red-dark">
-            {subtitle ?? "Rosewood Cafe by Mondy's"}
+            {subtitle ?? brand.name}
           </p>
           <h1 className="font-display text-lg font-bold text-mondy-ink">
             {title}

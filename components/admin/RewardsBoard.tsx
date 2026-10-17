@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -32,6 +33,7 @@ export function RewardsBoard({
   q: string;
   stats: { customers: number; points: number; optedIn: number };
 }) {
+  const brand = useBrand();
   return (
     <main className="min-h-screen bg-mondy-cream py-6 font-sans text-mondy-ink">
       <div className="mx-auto max-w-3xl space-y-5 px-4 sm:px-6">
@@ -40,7 +42,7 @@ export function RewardsBoard({
             <ArrowLeft className="h-4 w-4" aria-hidden />
             Register
           </Link>
-          <h1 className="font-display text-2xl font-bold">Rosewood Rewards</h1>
+          <h1 className="font-display text-2xl font-bold">{brand.rewardsName}</h1>
         </header>
 
         <SettingsCard initial={settings} />

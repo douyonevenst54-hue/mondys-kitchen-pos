@@ -1,0 +1,74 @@
+# Setting up the POS for a business
+
+One install per business: its own Vercel project, its own database, its own
+payment account. Nothing is shared between businesses.
+
+## 1. Accounts (in the business's name, you as admin)
+
+- **Neon**: new project → copy the pooled connection string (`DATABASE_URL`)
+  and the direct one (`DIRECT_URL`).
+- **Vercel**: new project from this repo.
+- **Payments**: their **Clover** account, or **Stripe** (for the S700/S710
+  counter reader and online cards).
+- **Resend** (order emails): add and verify their domain.
+- **Twilio** (texts, optional): number + A2P 10DLC registration. The
+  registration form needs `https://<their site>/order/privacy` and
+  `/order/terms`, which the app provides.
+
+## 2. Environment variables (Vercel → Settings → Environment Variables)
+
+| Variable | What |
+|---|---|
+| `DATABASE_URL`, `DIRECT_URL` | Neon |
+| `SESSION_SECRET` | 64 random characters (`openssl rand -hex 32`) |
+| `PUBLIC_ORDER_HOSTS` | their order domain(s), e.g. `kaymanman.com,www.kaymanman.com` (**required**: the default is Mondy's) |
+| `PUBLIC_SITE_URL` | e.g. `https://www.kaymanman.com` (links in emails) |
+| Clover: `CLOVER_*` / Stripe: `STRIPE_*`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | payments |
+| `RESEND_API_KEY`, `NOTIFY_FROM_EMAIL` | emails, e.g. `Kay Manman <orders@kaymanman.com>` |
+| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | texts (optional) |
+| `SESSION_IDLE_MINUTES` | register auto sign-out, default 5 |
+
+## 3. Database and business details
+
+```
+npx prisma db push
+npx tsx prisma/seed.ts                     # first time only
+cp brands/example.json brands/<client>.json  # fill in name, colors, hours, tax…
+npx tsx scripts/setup-business.ts brands/<client>.json           # preview
+npx tsx scripts/setup-business.ts brands/<client>.json --apply
+```
+
+Logo (optional): put `logo.png` or `logo.svg` in `public/`. Without one, the
+name is shown as a text wordmark. Brand name, colors, and the Rewards and news
+corner names can be changed later in **Online settings → Brand**.
+
+## 4. Staff
+
+Create `staff-pins.json` (never committed), then:
+
+```
+npx tsx scripts/set-staff-pins.ts            # preview
+npx tsx scripts/set-staff-pins.ts --apply    # also turns off the test accounts
+```
+
+## 5. Menu
+
+Enter dishes on **Today's menu** (or a load script), photos on **Dish
+photos**, packaged drinks by scanning them once on the register.
+
+## 6. Test, then clear
+
+Place a few orders (online and register, cash and card, one void with
+refund), print a daily report, download the accounting export. Then:
+
+```
+npx tsx scripts/clear-test-data.ts           # preview
+npx tsx scripts/clear-test-data.ts --apply   # before the first real customer
+```
+
+## 7. Go live
+
+- Switch payment keys from test to live and do one real $1 order + refund.
+- Confirm the meals tax rate (Tax & accounting).
+- Domain in Vercel (www primary), then check `/order`, `/order/privacy`, `/order/terms`.
+- Train staff (30–45 min): sale, cash/card, void, online queue, kitchen screen, Today's menu.

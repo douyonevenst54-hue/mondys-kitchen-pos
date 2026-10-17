@@ -1,4 +1,5 @@
 "use client";
+import { useBrand } from "@/components/brand/BrandProvider";
 
 import { useState, useTransition } from "react";
 import {
@@ -591,6 +592,7 @@ function MethodButton({
 }
 /** "Rewards phone?" after a sale, so walk-in customers earn points too. */
 function AddPoints({ orderId }: { orderId: string }) {
+  const brand = useBrand();
   const [phone, setPhone] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -599,7 +601,7 @@ function AddPoints({ orderId }: { orderId: string }) {
   return (
     <div className="mt-5 rounded-xl bg-mondy-cream p-3 text-left font-sans">
       <label htmlFor="rewards-phone" className="text-sm font-semibold text-mondy-ink">
-        Rosewood Rewards: customer&apos;s phone (optional)
+        {brand.rewardsName}: customer&apos;s phone (optional)
       </label>
       <div className="mt-1.5 flex gap-2">
         <input
@@ -612,7 +614,7 @@ function AddPoints({ orderId }: { orderId: string }) {
             setMsg(null);
             setPhone(e.target.value);
           }}
-          placeholder="(978) 555-0123"
+          placeholder="(555) 555-0123"
           className="h-11 min-w-0 flex-1 rounded-lg border border-mondy-border bg-white px-3 tabular text-mondy-ink"
         />
         <button

@@ -262,7 +262,7 @@ function AccountsCard({ initial }: { initial: AccountMap }) {
           QuickBooks: gear icon → <strong>Import data</strong> → <strong>Journal entries</strong> → upload the file and
           check the column matching.
         </li>
-        <li>Import each day only once. Each day has its own journal number (RW-YYYYMMDD) so duplicates are easy to spot.</li>
+        <li>Import each day only once. Each day has its own journal number (SALES-YYYYMMDD) so duplicates are easy to spot.</li>
       </ol>
       <form
         className="mt-4 grid gap-3 sm:grid-cols-2"

@@ -2,10 +2,15 @@ import "server-only";
 import fs from "node:fs";
 import path from "node:path";
 
-// Rosewood Cafe logo, if one is added to /public later. The old
-// mondys-logo.* files are ignored so the old brand doesn't reappear;
-// without a file, screens show the "ROSEWOOD CAFE / by Mondy's" wordmark.
+// The business logo, if a file is added to /public (logo.png, logo.svg…).
+// Without one, screens show the text wordmark from Brand settings.
+// (rosewood-logo.* still works for the first install.)
 const CANDIDATE_FILES = [
+  "logo.png",
+  "logo.svg",
+  "logo.jpg",
+  "logo.jpeg",
+  "logo.webp",
   "rosewood-logo.png",
   "rosewood-logo.svg",
   "rosewood-logo.jpg",
@@ -14,7 +19,7 @@ const CANDIDATE_FILES = [
 ];
 
 /**
- * Returns the public URL for the Mondy's logo if a file is present in /public,
+ * Returns the public URL for the business logo if a file is present in /public,
  * or null if not. Used to choose between the real logo image and the fallback
  * SVG emblem.
  */

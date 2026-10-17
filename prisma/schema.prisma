@@ -438,6 +438,12 @@ model Table {
 model RestaurantSettings {
   id                  String   @id @default(cuid())
   name                String   @default("Mondy's Kitchen")
+  // Brand (white-label): empty = fall back to `name` and the default colors
+  brandName           String?  // big wordmark line, e.g. "Rosewood Cafe"
+  brandTagline        String?  // small line under it, e.g. "by Mondy's"
+  brandColor          String?  // main color, hex (#8b5e3c); must stay readable with white text
+  clubName            String?  // news & giveaways corner on the order page, e.g. "PS Club"
+  rewardsName         String?  // e.g. "Rosewood Rewards"
   address             String?
   phone               String?
   email               String?

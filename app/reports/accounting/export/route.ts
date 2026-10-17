@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   let body: string;
   let name: string;
   if (kind === "qbo") {
-    body = await quickbooksJournalCsv(from, to, settings.timezone, accountsFrom(row?.accountingAccounts));
+    body = await quickbooksJournalCsv(from, to, settings.timezone, accountsFrom(row?.accountingAccounts), settings.name);
     name = `quickbooks-journal_${from}_to_${to}.csv`;
   } else if (kind === "summary") {
     body = await dailySummaryCsv(from, to, settings.timezone);
