@@ -6,12 +6,12 @@ const PUBLIC_PATHS = ["/login"];
 
 // Customer-facing pages: open to everyone, logged in or not.
 // /api/stripe is the Stripe webhook (it checks Stripe's signature itself).
-const CUSTOMER_PATHS = ["/order", "/api/stripe", "/api/clover"];
+const CUSTOMER_PATHS = ["/order", "/api/stripe", "/api/clover", "/api/cloudprnt"]; // cloudprnt: receipt printer, checks its own token
 
 // Paths a logged-in user can access regardless of shift status.
 // /shift/open is where we send cashiers without a shift; obviously they need
 // to be able to reach it. /shift/close is for closing. Sign-out via API.
-const SHIFT_EXEMPT_PATHS = ["/shift/open", "/shift/close", "/api", "/kitchen"]; // cooks don't count a drawer
+const SHIFT_EXEMPT_PATHS = ["/shift/open", "/shift/close", "/api", "/kitchen", "/kiosk"]; // cooks don't count a drawer
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

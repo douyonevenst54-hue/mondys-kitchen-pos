@@ -5,6 +5,9 @@ import type { OrderStats } from "@/lib/orders";
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: "Cash",
   CARD_PRESENT: "Card",
+  SQUARE_TERMINAL: "Card (Square)",
+  STRIPE_ONLINE: "Online card",
+  CLOVER_ONLINE: "Online card",
   CARD_MANUAL: "Card (keyed)",
   MOBILE_WALLET: "Mobile pay",
   GIFT_CARD: "Gift card",

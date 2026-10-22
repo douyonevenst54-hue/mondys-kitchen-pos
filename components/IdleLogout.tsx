@@ -12,7 +12,7 @@ const NO_TIMER = ["/login", "/order"];
  * tablet). They never time out, and they keep checking in so new orders keep
  * arriving. Leaving the queue starts the normal timer.
  */
-const DISPLAY_SCREENS = ["/online", "/kitchen"];
+const DISPLAY_SCREENS = ["/online", "/kitchen", "/kiosk"];
 
 const WARN_SECONDS = 30;
 const CHECK_IN_WHILE_ACTIVE_MS = 60_000;

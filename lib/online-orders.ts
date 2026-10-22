@@ -644,16 +644,22 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
   const since = new Date(Date.now() - 12 * 60 * 60_000);
   const orders = await prisma.order.findMany({
     where: {
-      source: "ONLINE_PICKUP",
       OR: [
-        { status: { in: ["SENT", "READY"] } },
-        { status: "COMPLETED", completedAt: { gte: since } },
-        // Paid on Clover's page but not confirmed yet (shown so staff can check).
         {
-          status: "OPEN",
-          createdAt: { gte: new Date(Date.now() - 6 * 60 * 60_000) },
-          payments: { some: { method: "CLOVER_ONLINE", status: "PENDING" } },
+          source: "ONLINE_PICKUP",
+          OR: [
+            { status: { in: ["SENT", "READY"] } },
+            { status: "COMPLETED", completedAt: { gte: since } },
+            // Paid on Clover's page but not confirmed yet (shown so staff can check).
+            {
+              status: "OPEN",
+              createdAt: { gte: new Date(Date.now() - 6 * 60 * 60_000) },
+              payments: { some: { method: "CLOVER_ONLINE", status: "PENDING" } },
+            },
+          ],
         },
+        // Self-checkout "pay at the counter": waiting for staff to take the payment.
+        { source: "KIOSK", status: "READY" },
       ],
     },
     orderBy: { createdAt: "asc" },
@@ -701,7 +707,7 @@ export async function markOnlinePickedUp(
 ): Promise<void> {
   await prisma.$transaction(async (tx: Tx) => {
     const order = await tx.order.findFirst({
-      where: { id: orderId, source: "ONLINE_PICKUP", status: { in: ["SENT", "READY"] } },
+      where: { id: orderId, source: { in: ["ONLINE_PICKUP", "KIOSK"] }, status: { in: ["SENT", "READY"] } },
       include: { payments: { take: 1 } },
     });
     if (!order) throw new OnlineOrderError("This order was already picked up or cancelled");

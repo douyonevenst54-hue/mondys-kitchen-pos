@@ -23,6 +23,7 @@ export const DEFAULT_ACCOUNTS = {
   cash: "Undeposited Funds",
   card: "Clover Clearing",
   stripe: "Stripe Clearing",
+  square: "Square Clearing",
   other: "Other Payments Clearing",
 } as const;
 export type AccountKey = keyof typeof DEFAULT_ACCOUNTS;
@@ -39,7 +40,7 @@ export function accountsFrom(raw: unknown): AccountMap {
   return out;
 }
 
-type Bucket = "cash" | "card" | "stripe" | "other";
+type Bucket = "cash" | "card" | "stripe" | "square" | "other";
 function bucketOf(method: PaymentMethod): Bucket {
   switch (method) {
     case "CASH":
@@ -51,6 +52,8 @@ function bucketOf(method: PaymentMethod): Bucket {
       return "card";
     case "STRIPE_ONLINE":
       return "stripe";
+    case "SQUARE_TERMINAL":
+      return "square";
     default:
       return "other";
   }
@@ -63,6 +66,7 @@ const METHOD_LABEL: Record<string, string> = {
   MOBILE_WALLET: "Mobile wallet",
   CLOVER_ONLINE: "Online card (Clover)",
   STRIPE_ONLINE: "Online card (Stripe)",
+  SQUARE_TERMINAL: "Card (Square)",
   GIFT_CARD: "Gift card",
   STORE_CREDIT: "Store credit",
   CASH_APP: "Cash App / Zelle",
@@ -121,6 +125,7 @@ export type DayTotals = {
   cash: number;
   card: number;
   stripe: number;
+  square: number;
   other: number;
   refunds: number;
 };
@@ -186,7 +191,7 @@ async function loadEntries(from: string, to: string, timezone: string): Promise<
       id: o.id,
       number: o.orderNumber,
       code: o.onlineConfirmationCode,
-      source: o.source === "ONLINE_PICKUP" ? "Online" : "Register",
+      source: o.source === "ONLINE_PICKUP" ? "Online" : o.source === "KIOSK" ? "Self-checkout" : "Register",
       type: o.orderType,
       customer: o.customerName,
       status: o.status,
@@ -227,7 +232,7 @@ export async function dailyTotals(from: string, to: string, timezone: string): P
   for (let d = from; d <= to; d = addDays(d, 1)) {
     days.set(d, {
       day: d, orders: 0, grossSales: 0, discounts: 0, netSales: 0, taxableSales: 0, tax: 0, delivery: 0,
-      tips: 0, collected: 0, cash: 0, card: 0, stripe: 0, other: 0, refunds: 0, ids: new Set(),
+      tips: 0, collected: 0, cash: 0, card: 0, stripe: 0, square: 0, other: 0, refunds: 0, ids: new Set(),
     });
   }
   for (const e of entries) {
@@ -258,7 +263,7 @@ export async function dailyTotals(from: string, to: string, timezone: string): P
 export function sumTotals(days: DayTotals[]): DayTotals {
   const z: DayTotals = {
     day: "Total", orders: 0, grossSales: 0, discounts: 0, netSales: 0, taxableSales: 0, tax: 0, delivery: 0,
-    tips: 0, collected: 0, cash: 0, card: 0, stripe: 0, other: 0, refunds: 0,
+    tips: 0, collected: 0, cash: 0, card: 0, stripe: 0, square: 0, other: 0, refunds: 0,
   };
   for (const d of days) {
     for (const k of Object.keys(z) as (keyof DayTotals)[]) {
@@ -311,6 +316,7 @@ export async function quickbooksJournalCsv(
       ["cash", d.cash],
       ["card", d.card],
       ["stripe", d.stripe],
+      ["square", d.square],
       ["other", d.other],
       ["discounts", d.discounts],
       ["sales", -d.grossSales],
@@ -333,11 +339,11 @@ export async function dailySummaryCsv(from: string, to: string, timezone: string
   const days = await dailyTotals(from, to, timezone);
   const head = [
     "Date", "Orders paid", "Gross sales", "Discounts", "Net sales", "Taxable sales", "Meals tax", "Delivery fees",
-    "Tips", "Total collected", "Cash", "Card (Clover)", "Online card (Stripe)", "Other", "Refunds",
+    "Tips", "Total collected", "Cash", "Card (Clover)", "Online card (Stripe)", "Card (Square)", "Other", "Refunds",
   ];
   const line = (d: DayTotals) => [
     d.day === "Total" ? "Total" : usDate(d.day), String(d.orders), d.grossSales, d.discounts, d.netSales, d.taxableSales,
-    d.tax, d.delivery, d.tips, d.collected, d.cash, d.card, d.stripe, d.other, d.refunds,
+    d.tax, d.delivery, d.tips, d.collected, d.cash, d.card, d.stripe, d.square, d.other, d.refunds,
   ];
   return csv([head, ...days.map(line), line(sumTotals(days))]);
 }

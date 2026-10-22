@@ -27,6 +27,7 @@ payment account. Nothing is shared between businesses.
 | `RESEND_API_KEY`, `NOTIFY_FROM_EMAIL` | emails, e.g. `Kay Manman <orders@kaymanman.com>` |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | texts (optional) |
 | `SESSION_IDLE_MINUTES` | register auto sign-out, default 5 |
+| `SQUARE_ACCESS_TOKEN`, `SQUARE_LOCATION_ID`, `SQUARE_ENVIRONMENT` | Square Terminal for self-checkout (`production` or `sandbox`) |
 
 ## 3. Database and business details
 
@@ -56,7 +57,21 @@ npx tsx scripts/set-staff-pins.ts --apply    # also turns off the test accounts
 Enter dishes on **Today's menu** (or a load script), photos on **Dish
 photos**, packaged drinks by scanning them once on the register.
 
-## 6. Test, then clear
+## 6. Self-checkout (optional)
+
+For self-serve fridges and grab-and-go shelves:
+
+1. **Barcode stickers** (staff menu): give each item a store barcode and print
+   stickers on a thermal label printer (2.25" × 1.25" labels).
+2. **Self-checkout setup** (staff menu): choose Square Terminal, Stripe
+   reader, or Pay at the counter; pair the Square Terminal with the code shown;
+   paste the CloudPRNT URL into the Star receipt printer's settings and press
+   **Print a test receipt**.
+3. On the tablet by the food: sign in, open **Self-checkout screen**, and turn
+   on Guided Access (iPad) or screen pinning (Android). Staff leave it with a
+   manager PIN.
+
+## 7. Test, then clear
 
 Place a few orders (online and register, cash and card, one void with
 refund), print a daily report, download the accounting export. Then:
@@ -66,7 +81,7 @@ npx tsx scripts/clear-test-data.ts           # preview
 npx tsx scripts/clear-test-data.ts --apply   # before the first real customer
 ```
 
-## 7. Go live
+## 8. Go live
 
 - Switch payment keys from test to live and do one real $1 order + refund.
 - Confirm the meals tax rate (Tax & accounting).

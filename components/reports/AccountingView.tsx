@@ -16,6 +16,7 @@ const ACCOUNT_LABELS: Record<AccountKey, string> = {
   cash: "Cash taken (debit)",
   card: "Card payments, Clover (debit)",
   stripe: "Online card, Stripe (debit)",
+  square: "Card, Square (debit)",
   other: "Other payment types (debit)",
 };
 

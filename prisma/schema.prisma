@@ -141,6 +141,7 @@ enum OrderType {
 enum OrderSource {
   POS              // rung up at the counter
   ONLINE_PICKUP    // placed online, customer picks up
+  KIOSK            // self-checkout screen (customer scans and pays)
 }
 
 enum OrderStatus {
@@ -320,6 +321,7 @@ enum PaymentMethod {
   CARD_PRESENT      // chip/tap/swipe via Epos Now terminal
   STRIPE_ONLINE     // online card payment via Stripe
   CLOVER_ONLINE     // online card payment on Clover's Hosted Checkout page
+  SQUARE_TERMINAL   // tapped/inserted on a Square Terminal (self-checkout)
   CARD_MANUAL       // keyed in (phone orders, card not present)
   MOBILE_WALLET     // Apple Pay / Google Pay / Samsung Pay (via Epos Now)
   GIFT_CARD         // store gift card
@@ -454,6 +456,14 @@ model RestaurantSettings {
   loyaltyPointsPerDollar  Int      @default(1)
   loyaltyRewardPoints     Int      @default(100)
   loyaltyRewardValue      Decimal  @db.Decimal(10, 2) @default(5.00)
+  // Self-checkout
+  kioskPayment            String   @default("counter") // "square" | "stripe" | "counter" (pay at the counter)
+  kioskAutoPrint          Boolean  @default(true)      // print the receipt without asking
+  squareDeviceId          String?  // paired Square Terminal (device id / serial)
+  squareDeviceName        String?
+  receiptPrinterMac       String?  // Star CloudPRNT printer that checked in (shown in settings)
+  receiptPrinterSeenAt    DateTime?
+  labelSize               String   @default("2.25x1.25") // sticker size for barcode labels
   currency            String   @default("USD")
   receiptFooter       String?
   logoUrl             String?
@@ -642,4 +652,22 @@ model Campaign {
   finishedAt  DateTime?
 
   discount Discount? @relation(fields: [discountId], references: [id])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRINT JOBS — receipts waiting for the Star CloudPRNT printer to pick up.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model PrintJob {
+  id        String    @id @default(cuid())
+  orderId   String?
+  kind      String    // "receipt" | "test"
+  content   String    // receipt text (printer-width lines)
+  attempts  Int       @default(0)
+  sentAt    DateTime?
+  printedAt DateTime?
+  error     String?
+  createdAt DateTime  @default(now())
+
+  @@index([printedAt, createdAt])
 }

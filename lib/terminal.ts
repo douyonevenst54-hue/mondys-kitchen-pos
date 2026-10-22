@@ -130,7 +130,7 @@ async function requireReader(): Promise<string> {
 /** The pickup order and its unpaid payment, or a clear error. */
 async function unpaidPickup(orderId: string) {
   const order = await prisma.order.findFirst({
-    where: { id: orderId, source: "ONLINE_PICKUP" },
+    where: { id: orderId, source: { in: ["ONLINE_PICKUP", "KIOSK"] } },
     select: {
       id: true,
       status: true,
@@ -279,7 +279,7 @@ export async function finalizeReaderPayment(paymentIntentId: string): Promise<vo
 
   await prisma.$transaction(async (tx) => {
     const order = await tx.order.findFirst({
-      where: { id: orderId, source: "ONLINE_PICKUP" },
+      where: { id: orderId, source: { in: ["ONLINE_PICKUP", "KIOSK"] } },
       select: { id: true, status: true, total: true, shiftId: true, payments: { select: { id: true, status: true, processorRef: true }, take: 1 } },
     });
     const payment = order?.payments[0];
