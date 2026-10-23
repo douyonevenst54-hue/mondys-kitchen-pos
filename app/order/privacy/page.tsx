@@ -29,7 +29,7 @@ export default async function PrivacyPage() {
 
       <h2>Card payments</h2>
       <p>
-        Card details are entered on our payment provider&apos;s secure form (Clover or Stripe). We never see or store your
+        Card details are entered on our payment provider&apos;s secure form (Square, Clover or Stripe). We never see or store your
         full card number.
       </p>
 

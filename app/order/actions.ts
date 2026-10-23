@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { confirmCloverPayments } from "@/lib/clover";
+import { confirmSquarePayments } from "@/lib/square-online";
 import { queueOrderNotifications } from "@/lib/notify";
 import { normalizePhone, rewardsFor } from "@/lib/loyalty";
 import { checkPromo } from "@/lib/promotions";
@@ -123,6 +124,17 @@ export async function refreshOnlineOrder(orderId: string): Promise<ClientOrder |
       }
     } catch (e) {
       console.error("Clover check from status page failed:", e);
+    }
+  }
+  if (order?.status === "OPEN" && order.payment?.method === "SQUARE_ONLINE") {
+    try {
+      // No webhook needed: look the payment up in Square.
+      if ((await confirmSquarePayments(order.id)) > 0) {
+        revalidatePath("/online");
+        return forClient(await getPublicOrder(orderId));
+      }
+    } catch (e) {
+      console.error("Square check from status page failed:", e);
     }
   }
   if (order?.status === "OPEN" && order.stripePaymentIntentId) {

@@ -6,6 +6,7 @@ import { OnlineSettingsForm } from "@/components/admin/OnlineSettingsForm";
 import { verifySession } from "@/lib/session";
 import { getCardStatus, webhookConfigured } from "@/lib/stripe-config";
 import { getCloverStatus } from "@/lib/clover";
+import { squareOnlineEnabled, squareStatus } from "@/lib/square";
 import { emailStatus, smsStatus } from "@/lib/notify";
 
 export const metadata: Metadata = { title: "Online settings" };
@@ -43,7 +44,10 @@ export default async function OnlineSettingsPage() {
       allowPreorders={settings.allowPreorders}
       notify={{ email: emailStatus(), sms: smsStatus() }}
       card={
-        clover.enabled
+        squareOnlineEnabled()
+          ? // Square needs no webhook: the POS looks paid orders up in Square.
+            { provider: "Square", enabled: true, mode: squareStatus().sandbox ? "test" : "live", problem: null, webhook: true }
+          : clover.enabled
           ? { provider: "Clover", enabled: true, mode: clover.env === "sandbox" ? "test" : "live", problem: null, webhook: clover.webhook }
           : {
               provider: "Stripe",

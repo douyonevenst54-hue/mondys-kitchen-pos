@@ -1,10 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { getSettings } from "@/lib/menu";
-import { PortionError, sellPortions } from "@/lib/portions";
-import { isForLaterDay } from "@/lib/online-hours";
-import { queueOrderNotifications } from "@/lib/notify";
+import { completePaidOnlineOrder } from "@/lib/online-paid";
 
 /**
  * Online card payments through Clover Hosted Checkout.
@@ -176,56 +173,9 @@ export async function finalizeCloverPayment(sessionId: string, paymentId: string
   return completeCloverOrder(payment.orderId, `${ref(sessionId)}:${paymentId}`);
 }
 
-/**
- * Mark a Clover-paid online order as paid and send it to the kitchen.
- * `proof` is stored on the payment: the Clover payment id, or who confirmed it.
- */
+/** Mark a Clover-paid online order as paid and send it to the kitchen. */
 export async function completeCloverOrder(orderId: string, proof: string): Promise<"done" | "already" | "unknown"> {
-  const payment = await prisma.payment.findFirst({
-    where: { orderId, method: "CLOVER_ONLINE" },
-    select: { id: true, status: true, processorRef: true, order: { select: { status: true, staffId: true } } },
-  });
-  if (!payment) return "unknown";
-  if (payment.status === "COMPLETED") return "already";
-  if (payment.order.status !== "OPEN") return "already";
-
-  const settings = await getSettings();
-  const asap = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
-  const scheduled = (await prisma.order.findUnique({ where: { id: orderId }, select: { scheduledPickupAt: true } }))?.scheduledPickupAt;
-  const readyAt = scheduled && scheduled > asap ? scheduled : asap;
-  const keepRef = payment.processorRef && !proof.startsWith("clover:") ? `${payment.processorRef}|${proof}` : proof;
-
-  const result = await prisma.$transaction(async (tx) => {
-    const claimed = await tx.payment.updateMany({
-      where: { id: payment.id, status: "PENDING" },
-      data: { status: "COMPLETED", processedAt: new Date(), processorRef: keepRef.slice(0, 190) },
-    });
-    if (claimed.count === 0) return "already" as const;
-
-    const items = await tx.orderItem.findMany({ where: { orderId }, select: { menuItemId: true, quantity: true } });
-    let soldOutNote: string | null = null;
-    try {
-      await tx.$executeRaw`SAVEPOINT portions`;
-      if (!isForLaterDay(scheduled, settings.timezone)) await sellPortions(tx, items, payment.order.staffId, orderId);
-    } catch (e) {
-      if (!(e instanceof PortionError)) throw e;
-      // Paid already: still send it, and tell the team to call the customer.
-      await tx.$executeRaw`ROLLBACK TO SAVEPOINT portions`;
-      soldOutNote = `⚠ Paid by card, then: ${e.message}. Call the customer to swap or refund in Clover.`;
-    }
-    const order = await tx.order.findUnique({ where: { id: orderId }, select: { notes: true } });
-    await tx.order.updateMany({
-      where: { id: orderId, status: "OPEN" },
-      data: {
-        status: "SENT",
-        estimatedReadyAt: readyAt,
-        ...(soldOutNote ? { notes: [soldOutNote, order?.notes].filter(Boolean).join(" · ").slice(0, 500) } : {}),
-      },
-    });
-    return "done" as const;
-  });
-  if (result === "done") queueOrderNotifications(orderId);
-  return result;
+  return completePaidOnlineOrder(orderId, "CLOVER_ONLINE", proof);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

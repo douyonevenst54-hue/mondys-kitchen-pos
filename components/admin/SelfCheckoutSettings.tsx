@@ -2,23 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { ArrowLeft, CheckCircle2, Copy, CreditCard, ExternalLink, Printer, ScanBarcode } from "lucide-react";
-import {
-  checkSquarePairing,
-  setKioskOptions,
-  setSquareDeviceManually,
-  startSquarePairing,
-  testPrint,
-  unpairSquare,
-} from "@/app/admin/self-checkout/actions";
+import { useState, useTransition } from "react";
+import { ArrowLeft, Copy, CreditCard, ExternalLink, Printer, ScanBarcode } from "lucide-react";
+import { setKioskOptions, testPrint } from "@/app/admin/self-checkout/actions";
+import { SquareTerminalCard, type SquareTerminalInfo } from "@/components/admin/SquareTerminalCard";
 
 type Props = {
   payment: string;
   autoPrint: boolean;
   activeMode: "square" | "stripe" | "counter";
   modeProblem: string | null;
-  square: { enabled: boolean; sandbox: boolean; problem: string | null; deviceId: string | null; deviceName: string | null };
+  square: SquareTerminalInfo;
   stripeReader: string | null;
   printer: { mac: string | null; online: boolean; waiting: number; url: string };
   stickered: number;
@@ -90,7 +84,7 @@ export function SelfCheckoutSettings(p: Props) {
             {[
               { v: "square", t: "Square Terminal", d: "Customer taps on the Square Terminal; the sale completes by itself." },
               { v: "stripe", t: "Stripe reader", d: p.stripeReader ? `Uses ${p.stripeReader} (paired in Card reader settings).` : "Pair it first in Card reader settings." },
-              { v: "counter", t: "Pay at the counter", d: "No reader at the self-checkout (for example, still on Clover). The order shows on Online orders for staff to take the payment." },
+              { v: "counter", t: "Pay at the counter", d: "No reader at the self-checkout. The order shows on Online orders for staff to take the payment." },
             ].map((o) => (
               <label key={o.v} className={`flex cursor-pointer items-start gap-3 rounded-xl p-3 ring-1 ${payment === o.v ? "ring-2 ring-mondy-red" : "ring-mondy-border"}`}>
                 <input type="radio" name="kiosk-pay" className="mt-1 h-5 w-5 accent-mondy-red" checked={payment === o.v} onChange={() => save({ payment: o.v })} disabled={pending} />
@@ -113,7 +107,12 @@ export function SelfCheckoutSettings(p: Props) {
           )}
         </section>
 
-        <SquareCard square={p.square} />
+        <SquareTerminalCard
+          square={p.square}
+          target="kiosk"
+          title="Square Terminal at the self-checkout"
+          intro="Its own Terminal, next to the self-checkout tablet. The register's Terminal is paired in Square setup."
+        />
 
         <section className={card} aria-labelledby="print-title">
           <h2 id="print-title" className="flex items-center gap-2 font-display text-lg font-bold">
@@ -205,111 +204,5 @@ function TestPrintButton() {
         </p>
       )}
     </div>
-  );
-}
-
-function SquareCard({ square }: { square: Props["square"] }) {
-  const router = useRouter();
-  const [pair, setPair] = useState<{ codeId: string; code: string } | null>(null);
-  const [manual, setManual] = useState("");
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  useEffect(() => {
-    if (!pair) return;
-    const t = setInterval(async () => {
-      const r = await checkSquarePairing(pair.codeId);
-      if (!r.ok) return setMsg({ ok: false, text: r.error });
-      if (r.paired) {
-        setPair(null);
-        setMsg({ ok: true, text: "Square Terminal paired" });
-        router.refresh();
-      } else if (r.expired) {
-        setPair(null);
-        setMsg({ ok: false, text: "The code expired. Get a new code." });
-      }
-    }, 3000);
-    return () => clearInterval(t);
-  }, [pair, router]);
-
-  return (
-    <section className={card} aria-labelledby="sq-title">
-      <h2 id="sq-title" className="font-display text-lg font-bold">
-        Square Terminal
-      </h2>
-      {!square.enabled ? (
-        <p className="mt-1 text-sm">
-          Not set up: {square.problem}. In Vercel, add <code>SQUARE_ACCESS_TOKEN</code>, <code>SQUARE_LOCATION_ID</code> and{" "}
-          <code>SQUARE_ENVIRONMENT</code> (<code>production</code> or <code>sandbox</code>) from the Square Developer Console, then redeploy.
-        </p>
-      ) : square.deviceId ? (
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-sm">
-          <p className="flex items-center gap-1.5">
-            <CheckCircle2 className="h-4 w-4 text-emerald-700" aria-hidden />
-            <span>
-              Paired: <strong>{square.deviceName ?? "Square Terminal"}</strong> <span className="text-mondy-muted">({square.deviceId})</span>
-              {square.sandbox && " · sandbox (test)"}
-            </span>
-          </p>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => startTransition(async () => { await unpairSquare(); router.refresh(); })}
-            className="min-h-11 rounded-lg px-3 font-semibold text-mondy-red-dark ring-1 ring-mondy-border"
-          >
-            Unpair
-          </button>
-        </div>
-      ) : square.sandbox ? (
-        <form
-          className="mt-2 flex flex-wrap items-end gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            startTransition(async () => {
-              const r = await setSquareDeviceManually(manual);
-              setMsg(r.ok ? { ok: true, text: "Test device saved" } : { ok: false, text: r.error });
-              router.refresh();
-            });
-          }}
-        >
-          <label className="min-w-0 flex-1 text-sm font-medium">
-            Sandbox test device id (Square&apos;s docs list them)
-            <input value={manual} onChange={(e) => setManual(e.target.value)} className="mt-1 block h-11 w-full rounded-lg px-3 ring-1 ring-mondy-border" />
-          </label>
-          <button type="submit" className="min-h-11 rounded-lg bg-mondy-ink px-4 text-sm font-semibold text-white">
-            Save
-          </button>
-        </form>
-      ) : pair ? (
-        <div className="mt-2 text-sm">
-          <p>On the Square Terminal: sign in → Device code, and enter:</p>
-          <p className="mt-2 font-mono text-3xl font-black tracking-widest" aria-live="polite">
-            {pair.code}
-          </p>
-          <p className="mt-1 text-mondy-muted">Waiting for the Terminal… (the code works for 5 minutes)</p>
-        </div>
-      ) : (
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              setMsg(null);
-              const r = await startSquarePairing();
-              if (r.ok) setPair({ codeId: r.codeId, code: r.code });
-              else setMsg({ ok: false, text: r.error });
-            })
-          }
-          className="mt-2 min-h-11 rounded-lg bg-mondy-ink px-4 text-sm font-semibold text-white disabled:opacity-50"
-        >
-          Pair a Square Terminal
-        </button>
-      )}
-      {msg && (
-        <p role={msg.ok ? "status" : "alert"} className={`mt-2 text-sm ${msg.ok ? "text-emerald-700" : "text-mondy-red-dark"}`}>
-          {msg.text}
-        </p>
-      )}
-    </section>
   );
 }

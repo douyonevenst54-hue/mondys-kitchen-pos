@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { getOnlineMenu, getOnlineStatus, PAY_AT_PICKUP_LIMIT } from "@/lib/online-orders";
 import { resolveLogoUrl } from "@/lib/logo";
 import { getCardStatus } from "@/lib/stripe-config";
-import { getCloverStatus } from "@/lib/clover";
+import { onlineCardProvider } from "@/lib/card-provider";
 import { getLiveAnnouncements } from "@/lib/announcements";
 import { pickupDays } from "@/lib/online-hours";
 import { smsStatus } from "@/lib/notify";
@@ -22,9 +22,9 @@ export default async function OrderPage() {
   const [menu, { settings, state }] = await Promise.all([getOnlineMenu(), getOnlineStatus()]);
   const [clubPosts, promos] = await Promise.all([getLiveAnnouncements(settings.timezone), activeBanners()]);
   const card = getCardStatus();
-  // The restaurant's Clover account comes first; Stripe is the fallback.
-  const cardProvider = getCloverStatus().enabled ? "clover" : card.enabled ? "stripe" : null;
-  if (!cardProvider && !card.enabled) console.warn(`Online card payments are off: ${card.problem}`);
+  // Square first (the restaurant's own processor), then Clover, then Stripe.
+  const cardProvider = onlineCardProvider();
+  if (!cardProvider) console.warn(`Online card payments are off: ${card.enabled ? "no provider" : card.problem}`);
   const days = settings.onlineOrderingPaused
     ? []
     : pickupDays({

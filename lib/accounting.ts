@@ -53,6 +53,7 @@ function bucketOf(method: PaymentMethod): Bucket {
     case "STRIPE_ONLINE":
       return "stripe";
     case "SQUARE_TERMINAL":
+    case "SQUARE_ONLINE":
       return "square";
     default:
       return "other";
@@ -67,6 +68,7 @@ const METHOD_LABEL: Record<string, string> = {
   CLOVER_ONLINE: "Online card (Clover)",
   STRIPE_ONLINE: "Online card (Stripe)",
   SQUARE_TERMINAL: "Card (Square)",
+  SQUARE_ONLINE: "Online card (Square)",
   GIFT_CARD: "Gift card",
   STORE_CREDIT: "Store credit",
   CASH_APP: "Cash App / Zelle",

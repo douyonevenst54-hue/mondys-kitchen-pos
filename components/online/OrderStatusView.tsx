@@ -23,7 +23,7 @@ export function OrderStatusView({
   initial: ClientOrder;
   restaurant: { name: string; address: string | null; phone: string | null };
   timezone: string;
-  /** Set when the customer comes back from Clover without paying. */
+  /** Set when the customer comes back from the payment page without paying. */
   paymentNote?: "failed" | "cancelled" | null;
 }) {
   const [order, setOrder] = useState(initial);
@@ -72,11 +72,12 @@ export function OrderStatusView({
   // "Fri, Oct 16 at 9:00 AM" for an order ahead, "9:00 AM" for the same day.
   const pickupWhen = (d: Date | string) =>
     dayOf(d) !== dayOf(order.createdAt) ? `${dayOf(d)} at ${time(d)}` : time(d);
-  const paidByCard = order.payment?.method === "STRIPE_ONLINE" || order.payment?.method === "CLOVER_ONLINE";
+  const ONLINE_CARD = ["STRIPE_ONLINE", "CLOVER_ONLINE", "SQUARE_ONLINE"];
+  const paidByCard = ONLINE_CARD.includes(order.payment?.method ?? "");
 
   const reached = STEPS.findIndex((s) => s.key === order.status);
   const payAtCounter =
-    order.payment?.status === "PENDING" && order.payment.method !== "STRIPE_ONLINE" && order.payment.method !== "CLOVER_ONLINE";
+    order.payment?.status === "PENDING" && !ONLINE_CARD.includes(order.payment.method);
 
   let headline: string;
   let sub: string;
@@ -85,7 +86,10 @@ export function OrderStatusView({
     headline = paymentNote === "cancelled" ? "Payment cancelled" : "Your payment didn't go through";
     sub = "No money was taken, and the kitchen didn't get this order. Your cart is saved, so trying again only takes a moment.";
   } else if (order.status === "OPEN") {
-    headline = order.payment?.method === "CLOVER_ONLINE" ? "Confirming your payment…" : "Waiting for your payment";
+    headline =
+      order.payment?.method === "CLOVER_ONLINE" || order.payment?.method === "SQUARE_ONLINE"
+        ? "Confirming your payment…"
+        : "Waiting for your payment";
     sub = "This page updates by itself once your payment goes through.";
   } else if (order.status === "VOIDED") {
     headline = "This order was cancelled";

@@ -5,7 +5,9 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/menu";
 import { getStripe, toCents } from "@/lib/stripe";
-import { CloverError, attachCloverSession, createCloverCheckout, getCloverStatus } from "@/lib/clover";
+import { CloverError, attachCloverSession, createCloverCheckout } from "@/lib/clover";
+import { SquareError, startSquareOnlineCheckout } from "@/lib/square-online";
+import { onlineCardProvider } from "@/lib/card-provider";
 import { withUniqueConfirmationCode } from "@/lib/confirmation-code";
 import { PortionError, sellPortions } from "@/lib/portions";
 import { queueOrderNotifications, smsStatus } from "@/lib/notify";
@@ -290,7 +292,7 @@ export type PlaceOrderInput = {
   useReward: boolean;
   /** "Email me specials" (only with an email). */
   marketingOptIn: boolean;
-  /** https://mondyskitchen.com — where Clover sends the customer back. */
+  /** https://mondyskitchen.com — where Square or Clover sends the customer back. */
   returnBase: string;
 };
 
@@ -358,8 +360,11 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
 
   const staffId = await getOnlineStaffId();
   const isCard = input.payment === "card";
-  // Clover (the restaurant's own processor) takes priority over Stripe when connected.
-  const useClover = isCard && getCloverStatus().enabled;
+  // Square (the restaurant's own processor) first, then Clover, then Stripe.
+  const provider = isCard ? onlineCardProvider() : null;
+  if (isCard && !provider) throw new OnlineOrderError("Card payments aren't working right now. Choose pay at pickup or call us.");
+  const useClover = provider === "clover";
+  const useSquare = provider === "square";
   const readyAt = new Date(Date.now() + settings.onlinePrepTimeMinutes * 60_000);
 
   const order = await withUniqueConfirmationCode((code) =>
@@ -381,8 +386,8 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
           discountAmount,
           orderType: "TAKEOUT",
           source: "ONLINE_PICKUP",
-          // Card orders stay OPEN (invisible to the kitchen) until Stripe
-          // confirms the payment. Pay-at-pickup orders go straight in.
+          // Card orders stay OPEN (invisible to the kitchen) until the card
+          // processor confirms the payment. Pay-at-pickup orders go straight in.
           status: isCard ? "OPEN" : "SENT",
           customerName: input.customerName,
           customerPhone: input.customerPhone,
@@ -398,7 +403,7 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
           items: { create: priced },
           payments: {
             create: {
-              method: isCard ? (useClover ? "CLOVER_ONLINE" : "STRIPE_ONLINE") : "CASH",
+              method: isCard ? (useSquare ? "SQUARE_ONLINE" : useClover ? "CLOVER_ONLINE" : "STRIPE_ONLINE") : "CASH",
               status: "PENDING",
               amount: total,
             },
@@ -426,6 +431,29 @@ export async function placeOnlineOrder(input: PlaceOrderInput): Promise<PlaceOrd
   if (!isCard) {
     queueOrderNotifications(order.id);
     return { kind: "pickup", orderId: order.id };
+  }
+
+  if (useSquare) {
+    try {
+      const summary = priced.map((l) => `${l.quantity}× ${l.nameSnapshot}${l.notes ? ` (${l.notes})` : ""}`).join(", ");
+      const { href } = await startSquareOnlineCheckout({
+        orderId: order.id,
+        code: order.onlineConfirmationCode ?? "",
+        businessName: settings.name,
+        total,
+        summary,
+        customer: { email: input.customerEmail, phone: input.customerPhone },
+        returnBase: input.returnBase,
+      });
+      return { kind: "redirect", orderId: order.id, href };
+    } catch (e) {
+      console.error("Square checkout failed:", e instanceof SquareError ? e.message : e);
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { status: "VOIDED", voidedAt: new Date(), voidedReason: "Card payment could not be started" },
+      });
+      throw new OnlineOrderError("Card payments aren't working right now. Choose pay at pickup or call us.");
+    }
   }
 
   if (useClover) {
@@ -636,6 +664,8 @@ export type QueueOrder = {
   completedAt: Date | null;
   total: number;
   paid: boolean;
+  /** Paying online on Square's or Clover's page. */
+  cardBy: "Square" | "Clover" | null;
   items: { name: string; quantity: number; notes: string | null }[];
 };
 
@@ -650,11 +680,11 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
           OR: [
             { status: { in: ["SENT", "READY"] } },
             { status: "COMPLETED", completedAt: { gte: since } },
-            // Paid on Clover's page but not confirmed yet (shown so staff can check).
+            // Paying on Square's or Clover's page, not confirmed yet (shown so staff can check).
             {
               status: "OPEN",
               createdAt: { gte: new Date(Date.now() - 6 * 60 * 60_000) },
-              payments: { some: { method: "CLOVER_ONLINE", status: "PENDING" } },
+              payments: { some: { method: { in: ["CLOVER_ONLINE", "SQUARE_ONLINE"] }, status: "PENDING" } },
             },
           ],
         },
@@ -665,7 +695,7 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
     orderBy: { createdAt: "asc" },
     include: {
       items: { select: { nameSnapshot: true, quantity: true, notes: true } },
-      payments: { select: { status: true }, take: 1 },
+      payments: { select: { status: true, method: true }, take: 1 },
     },
   });
   return orders.map((o) => ({
@@ -682,6 +712,7 @@ export async function getOnlineQueue(): Promise<QueueOrder[]> {
     completedAt: o.completedAt,
     total: Number(o.total),
     paid: o.payments[0]?.status === "COMPLETED",
+    cardBy: o.payments[0]?.method === "SQUARE_ONLINE" ? "Square" : o.payments[0]?.method === "CLOVER_ONLINE" ? "Clover" : null,
     items: o.items.map((i) => ({ name: i.nameSnapshot, quantity: i.quantity, notes: i.notes })),
   }));
 }
@@ -726,15 +757,20 @@ export async function markOnlinePickedUp(
         throw new OnlineOrderError("Open your shift before taking cash");
       }
       if (paidWith !== "CASH" && !proof) throw new OnlineOrderError("This card payment hasn't been confirmed");
-      if (proof?.ref.startsWith("clover-pay:")) {
-        const taken = await tx.payment.findFirst({ where: { processorRef: proof.ref }, select: { id: true } });
-        if (taken) throw new OnlineOrderError("That Clover payment was already used for another sale");
+      if (proof?.ref.startsWith("clover-pay:") || proof?.ref.startsWith("square:")) {
+        await tx.$queryRaw`SELECT 1 AS ok FROM (SELECT pg_advisory_xact_lock(hashtext(${proof.ref}))) AS l`;
+        const taken = await tx.payment.findFirst({
+          where: { OR: [{ processorRef: proof.ref }, { processorRef: { endsWith: `|${proof.ref}` } }] },
+          select: { id: true },
+        });
+        if (taken) throw new OnlineOrderError("That card payment was already used for another sale");
       }
       shiftId = shift?.id ?? null;
       await tx.payment.update({
         where: { id: payment.id },
         data: {
-          method: paidWith,
+          // Paid on the Square Terminal: books to Square Clearing.
+          method: proof?.ref.startsWith("square:") ? "SQUARE_TERMINAL" : paidWith,
           status: "COMPLETED",
           processedAt: new Date(),
           ...(proof ? { processorRef: proof.ref, cardLast4: proof.last4, cardBrand: proof.brand } : {}),

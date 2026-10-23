@@ -113,7 +113,7 @@ type Props = {
   openState: OpenState;
   payAtPickupLimit: number;
   cardEnabled: boolean;
-  cardProvider: "clover" | "stripe" | null;
+  cardProvider: "square" | "clover" | "stripe" | null;
   stripeKey: string | null;
   logoUrl: string | null;
   clubPosts: ClubPost[];
@@ -590,7 +590,7 @@ function Checkout({
   canOrder: boolean;
   closedMessage: string;
   cardEnabled: boolean;
-  cardProvider: "clover" | "stripe" | null;
+  cardProvider: "square" | "clover" | "stripe" | null;
   payAtPickupLimit: number;
   onBack: () => void;
   onChangeQty: (key: string, delta: number) => void;
@@ -744,7 +744,7 @@ function Checkout({
         if (res.kind === "pickup") onPickupPlaced(res.orderId);
         else if (res.kind === "redirect") {
           setLeaving(true);
-          window.location.assign(res.href); // Clover's secure payment page
+          window.location.assign(res.href); // Square's or Clover's secure payment page
         } else onCardReady(res.orderId, res.clientSecret, res.total);
       } catch {
         showError({
@@ -1127,7 +1127,13 @@ function Checkout({
                     checked={effectivePayment === "card"}
                     onChange={() => setPayment("card")}
                     title="Pay now with card"
-                    detail={cardProvider === "clover" ? "Secure checkout by Clover" : "Apple Pay, Google Pay, and cards"}
+                    detail={
+                      cardProvider === "square"
+                        ? "Secure checkout by Square: cards, Apple Pay, Google Pay"
+                        : cardProvider === "clover"
+                          ? "Secure checkout by Clover"
+                          : "Apple Pay, Google Pay, and cards"
+                    }
                   />
                 )}
                 <PayOption

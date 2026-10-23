@@ -119,7 +119,7 @@ export function OnlineSettingsForm({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type CardInfo = {
-  provider: "Clover" | "Stripe";
+  provider: "Square" | "Clover" | "Stripe";
   enabled: boolean;
   mode: "test" | "live" | null;
   problem: string | null;

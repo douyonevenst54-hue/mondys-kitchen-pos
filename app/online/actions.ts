@@ -5,6 +5,9 @@ import { revalidatePath } from "next/cache";
 import { getManagerFromSession, getStaffFromSession } from "@/lib/staff";
 import { prisma } from "@/lib/prisma";
 import { completeCloverOrder, confirmCloverPayments, verifyDevicePayment } from "@/lib/clover";
+import { closeSquareCheckout, confirmSquarePayments } from "@/lib/square-online";
+import { completePaidOnlineOrder } from "@/lib/online-paid";
+import { verifyRegisterCharge } from "@/lib/square-register";
 import { checkManagerPin } from "@/lib/manager-pin";
 import {
   OnlineOrderError,
@@ -40,7 +43,7 @@ export async function readyOnlineOrder(orderId: string): Promise<Result> {
 export async function pickUpOnlineOrder(
   orderId: string,
   paidWith: "CASH" | "CARD_PRESENT" | null,
-  verification?: { kind: "clover"; paymentId: string } | { kind: "manager"; pin: string },
+  verification?: { kind: "clover"; paymentId: string } | { kind: "square"; checkoutId: string } | { kind: "manager"; pin: string },
 ): Promise<Result> {
   const parsed = z
     .object({ orderId: z.string().min(1).max(64), paidWith: z.enum(["CASH", "CARD_PRESENT"]).nullable() })
@@ -59,6 +62,12 @@ export async function pickUpOnlineOrder(
       const r = await verifyDevicePayment(String(verification.paymentId), Math.round(Number(order.total) * 100));
       if (!r.ok) return { ok: false, error: r.error };
       proof = { ref: r.ref, last4: r.last4, brand: r.brand };
+    } else if (verification.kind === "square") {
+      const order = await prisma.order.findUnique({ where: { id: parsed.data.orderId }, select: { total: true } });
+      if (!order) return { ok: false, error: "Order not found" };
+      const r = await verifyRegisterCharge(String(verification.checkoutId), Math.round(Number(order.total) * 100));
+      if (!r.ok) return { ok: false, error: r.error };
+      proof = { ref: r.ref, last4: r.last4, brand: r.brand };
     } else {
       const m = await checkManagerPin(String(verification.pin), staff.id);
       if (!m.ok) return { ok: false, error: m.error };
@@ -68,22 +77,31 @@ export async function pickUpOnlineOrder(
   return run((staffId) => markOnlinePickedUp(parsed.data.orderId, staffId, parsed.data.paidWith, proof));
 }
 
-/** Polled by the queue screen. Also picks up Clover payments the webhook missed. */
+/** Polled by the queue screen. Also picks up Square/Clover payments the webhook missed. */
 export async function fetchOnlineQueue(): Promise<QueueOrder[] | null> {
   const staff = await getStaffFromSession();
   if (!staff) return null;
+  await confirmSquarePayments().catch((e) => console.error("Square check from queue failed:", e));
   await confirmCloverPayments().catch((e) => console.error("Clover check from queue failed:", e));
   return getOnlineQueue();
 }
 
-/** Manager saw the payment in the Clover dashboard: send the order to the kitchen. */
+/** Manager saw the payment in the Square or Clover dashboard: send the order to the kitchen. */
 export async function confirmCardPaidManually(orderId: string): Promise<Result> {
   const id = z.string().min(1).max(64).safeParse(orderId);
   if (!id.success) return { ok: false, error: "Invalid order" };
   const manager = await getManagerFromSession();
   if (!manager) return { ok: false, error: "Only an owner or manager can confirm a payment" };
-  const res = await completeCloverOrder(id.data, `confirmed-by:${manager.name}`.slice(0, 60));
-  if (res === "unknown") return { ok: false, error: "This order isn't waiting for a Clover payment" };
+  const proof = `confirmed-by:${manager.name}`.slice(0, 60);
+  const waiting = await prisma.payment.findFirst({
+    where: { orderId: id.data, status: "PENDING", method: { in: ["SQUARE_ONLINE", "CLOVER_ONLINE"] } },
+    select: { method: true },
+  });
+  const res =
+    waiting?.method === "SQUARE_ONLINE"
+      ? await completePaidOnlineOrder(id.data, "SQUARE_ONLINE", proof)
+      : await completeCloverOrder(id.data, proof);
+  if (res === "unknown") return { ok: false, error: "This order isn't waiting for a card payment" };
   revalidatePath("/online");
   revalidatePath("/orders");
   return { ok: true };
@@ -95,6 +113,15 @@ export async function cancelUnpaidOrder(orderId: string): Promise<Result> {
   if (!id.success) return { ok: false, error: "Invalid order" };
   const manager = await getManagerFromSession();
   if (!manager) return { ok: false, error: "Only an owner or manager can cancel an order" };
+  try {
+    if ((await closeSquareCheckout(id.data)) === "paid") {
+      revalidatePath("/online");
+      return { ok: false, error: "Square shows this order paid, so it went to the kitchen instead" };
+    }
+  } catch (e) {
+    console.error("Closing the Square payment link failed:", e);
+    return { ok: false, error: "Couldn't reach Square to close the payment page. Try again." };
+  }
   const res = await prisma.order.updateMany({
     where: { id: id.data, source: "ONLINE_PICKUP", status: "OPEN" },
     data: { status: "VOIDED", voidedAt: new Date(), voidedReason: "Card payment not completed", voidedByStaffId: manager.id },

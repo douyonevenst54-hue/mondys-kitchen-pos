@@ -14,6 +14,8 @@ import { checkSelection } from "@/lib/options";
 import { loadOptionGroups } from "@/lib/options-db";
 import { cloverLookupEnabled, findDevicePayments, verifyDevicePayment, type DevicePayment } from "@/lib/clover";
 import { checkManagerPin } from "@/lib/manager-pin";
+import { squareRefWhere, verifyRegisterCharge } from "@/lib/square-register";
+import { getSquarePayment, refundSquarePayment, squarePaidCents, squarePaymentIdFrom } from "@/lib/square";
 import { queueOrderNotifications } from "@/lib/notify";
 
 export async function logoutAndRedirect() {
@@ -45,16 +47,18 @@ const PaymentInputSchema = z.object({
   changeGiven: z.number().nullable().optional(),
   cardLast4: z.string().optional().nullable(),
   cardBrand: z.string().optional().nullable(),
-  // Proof for anything that isn't cash: the Clover payment, or a manager's PIN.
+  // Proof for anything that isn't cash: the Square Terminal checkout, the
+  // Clover payment, or a manager's PIN.
   verification: z
     .union([
+      z.object({ kind: z.literal("square"), checkoutId: z.string().min(4).max(80) }),
       z.object({ kind: z.literal("clover"), paymentId: z.string().min(6).max(20) }),
       z.object({ kind: z.literal("manager"), pin: z.string().max(8) }),
     ])
     .optional(),
 });
 
-/** Paid through the Clover device, so Clover can confirm them. */
+/** Paid on the card machine (Square Terminal or Clover), so the processor can confirm them. */
 const CLOVER_METHODS = new Set(["CARD_PRESENT", "CARD_MANUAL", "MOBILE_WALLET"]);
 
 const LineInputSchema = z.object({
@@ -147,13 +151,22 @@ export async function submitCheckout(input: CheckoutInput) {
     }
   }
 
-  // Non-cash payments must be proven: Clover shows the payment, or a manager
-  // approves with their PIN. A cashier can't just tap "paid".
+  // Non-cash payments must be proven: Square or Clover shows the payment, or
+  // a manager approves with their PIN. A cashier can't just tap "paid".
   let proof: { ref: string; last4: string | null; brand: string | null } | null = null;
+  let method: string = data.payment.method;
   if (data.payment.method !== "CASH") {
     const v = data.payment.verification;
     if (!v) return { ok: false as const, error: "This payment hasn't been confirmed yet" };
-    if (v.kind === "clover") {
+    if (v.kind === "square") {
+      if (!CLOVER_METHODS.has(data.payment.method)) {
+        return { ok: false as const, error: "Only card payments can be confirmed with Square" };
+      }
+      const r = await verifyRegisterCharge(v.checkoutId, Math.round(data.total * 100));
+      if (!r.ok) return { ok: false as const, error: r.error };
+      proof = { ref: r.ref, last4: r.last4, brand: r.brand };
+      method = "SQUARE_TERMINAL"; // money is in Square: books to Square Clearing
+    } else if (v.kind === "clover") {
       if (!CLOVER_METHODS.has(data.payment.method)) {
         return { ok: false as const, error: "Only card payments can be confirmed with Clover" };
       }
@@ -169,10 +182,12 @@ export async function submitCheckout(input: CheckoutInput) {
 
   try {
     const order = await prisma.$transaction(async (tx) => {
-      // A Clover payment can only pay for one sale.
-      if (proof?.ref.startsWith("clover-pay:")) {
-        const taken = await tx.payment.findFirst({ where: { processorRef: proof.ref }, select: { id: true } });
-        if (taken) throw new Error("That Clover payment was already used for another sale");
+      // A Square or Clover payment can only pay for one sale. The lock makes
+      // two saves of the same payment (double tap, two screens) wait in line.
+      if (proof?.ref.startsWith("clover-pay:") || proof?.ref.startsWith("square:")) {
+        await tx.$queryRaw`SELECT 1 AS ok FROM (SELECT pg_advisory_xact_lock(hashtext(${proof.ref}))) AS l`;
+        const taken = await tx.payment.findFirst({ where: squareRefWhere(proof.ref), select: { id: true } });
+        if (taken) throw new Error("That card payment was already used for another sale");
       }
 
       // 0. Refuse items that were sold out, hidden, or taken off today's
@@ -326,9 +341,10 @@ export async function submitCheckout(input: CheckoutInput) {
       await tx.payment.create({
         data: {
           orderId: created.id,
-          method: data.payment.method,
+          method: method as typeof data.payment.method | "SQUARE_TERMINAL",
           status: "COMPLETED",
-          amount: data.payment.amount,
+          // Square charged exactly the total (checked above).
+          amount: method === "SQUARE_TERMINAL" ? data.total : data.payment.amount,
           tendered: data.payment.tendered ?? null,
           changeGiven: data.payment.changeGiven ?? null,
           cardLast4: proof?.last4 ?? data.payment.cardLast4 ?? null,
@@ -402,7 +418,7 @@ export async function voidOrder(
       id: true,
       status: true,
       stripePaymentIntentId: true,
-      payments: { select: { method: true, status: true } },
+      payments: { select: { method: true, status: true, processorRef: true, amount: true } },
     },
   });
   if (!order) {
@@ -431,9 +447,35 @@ export async function voidOrder(
     }
   }
 
-  // Clover online payments are refunded from the Clover dashboard.
-  const paidClover = order.payments.some((p) => p.method === "CLOVER_ONLINE" && p.status === "COMPLETED");
-  const voidNote = paidClover ? `${parsed.data.reason} · Refund the card in the Clover dashboard` : parsed.data.reason;
+  // Square card payments (register, self-checkout, online) go back to the card automatically.
+  const notes: string[] = [];
+  for (const p of order.payments) {
+    if (p.status !== "COMPLETED" || (p.method !== "SQUARE_TERMINAL" && p.method !== "SQUARE_ONLINE")) continue;
+    const squareId = squarePaymentIdFrom(p.processorRef);
+    if (!squareId) {
+      notes.push("Refund the card in the Square dashboard");
+      continue;
+    }
+    try {
+      // Refund what Square actually took, not what the POS recorded.
+      const charged = await getSquarePayment(squareId);
+      const cents = squarePaidCents(charged) || Math.round(Number(p.amount) * 100);
+      await refundSquarePayment(squareId, cents, parsed.data.reason || "Order voided");
+      notes.push("Card refunded through Square");
+    } catch (e) {
+      console.error("Square refund failed:", e);
+      return {
+        ok: false as const,
+        error: "Square refund failed, so the order was not voided. Try again or refund from the Square dashboard.",
+      };
+    }
+  }
+  // Clover payments are refunded from the Clover dashboard.
+  const paidClover = order.payments.some(
+    (p) => p.status === "COMPLETED" && (p.method === "CLOVER_ONLINE" || p.processorRef?.startsWith("clover-pay:")),
+  );
+  if (paidClover) notes.push("Refund the card in the Clover dashboard");
+  const voidNote = [parsed.data.reason, ...notes].join(" · ").slice(0, 500);
 
   const managerId = manager.id;
   await prisma.$transaction(async (tx) => {

@@ -168,7 +168,7 @@ function compose(
       ? `Ready around ${fmt(o.estimatedReadyAt, false)}`
       : "";
   const p = o.payments[0];
-  const paid = p && (p.method === "STRIPE_ONLINE" || p.method === "CLOVER_ONLINE") && p.status !== "PENDING";
+  const paid = p && ["STRIPE_ONLINE", "CLOVER_ONLINE", "SQUARE_ONLINE"].includes(p.method) && p.status !== "PENDING";
   const refunded = p?.status === "REFUNDED";
 
   let subject: string;

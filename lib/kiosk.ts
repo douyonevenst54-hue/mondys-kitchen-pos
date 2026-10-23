@@ -27,7 +27,7 @@ import { queueReceipt } from "@/lib/print-queue";
  * Payment, from Online settings > Self-checkout:
  *  - "square": Square Terminal (Terminal API)
  *  - "stripe": the paired Stripe reader (S700/S710)
- *  - "counter": no reader yet (e.g. still on Clover): the order shows up on
+ *  - "counter": no reader at the self-checkout: the order shows up on
  *    the Online orders screen as "pay at counter", and staff take the payment.
  */
 

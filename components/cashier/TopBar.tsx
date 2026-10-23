@@ -2,7 +2,7 @@
 import { useBrand } from "@/components/brand/BrandProvider";
 
 import Image from "next/image";
-import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, ChefHat, ScanBarcode, Printer, MonitorSmartphone, Settings2, Calculator, Percent, Star, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare } from "lucide-react";
+import { Search, LogOut, User, Clock, Receipt, Ban, ClipboardList, Globe, ChefHat, ScanBarcode, Printer, MonitorSmartphone, Settings2, Calculator, Percent, Star, CalendarDays, Tag, Megaphone, Camera, UtensilsCrossed, MessageSquare, CreditCard } from "lucide-react";
 import { useState } from "react";
 import { ShiftStatus } from "./ShiftStatus";
 
@@ -205,6 +205,15 @@ export function TopBar({
                 <MonitorSmartphone className="h-4 w-4 text-mondy-muted" aria-hidden />
                 Self-checkout screen
               </a>
+              {(staffRole === "OWNER" || staffRole === "MANAGER") && (
+                <a
+                  href="/admin/square"
+                  className="flex w-full items-center gap-3 border-b border-mondy-border px-4 py-3 text-left font-sans text-sm text-mondy-ink transition hover:bg-mondy-cream"
+                >
+                  <CreditCard className="h-4 w-4 text-mondy-muted" aria-hidden />
+                  Square setup
+                </a>
+              )}
               {(staffRole === "OWNER" || staffRole === "MANAGER") && (
                 <a
                   href="/admin/self-checkout"

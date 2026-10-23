@@ -64,6 +64,8 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
 
   const [step, setStep] = useState<Step>(initialStep);
   const [method, setMethod] = useState<Method | null>(null);
+  // A card is on the Square Terminal (or charged, not saved yet): the window can't be closed.
+  const [cardBusy, setCardBusy] = useState(false);
   const [tendered, setTendered] = useState<string>("");
   const [customTipInput, setCustomTipInput] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -176,7 +178,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-mondy-ink/50 p-4 backdrop-blur-sm"
-      onClick={step === "success" ? undefined : onClose}
+      onClick={step === "success" || cardBusy ? undefined : onClose}
     >
       <div
         className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl"
@@ -213,6 +215,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
             <button
               type="button"
               onClick={onClose}
+              disabled={cardBusy}
               aria-label="Close"
               className="grid h-9 w-9 place-items-center rounded-lg text-mondy-muted hover:bg-mondy-cream hover:text-mondy-ink"
             >
@@ -513,6 +516,7 @@ export function CheckoutModal({ staffId, taxRate, onClose, onComplete }: Props) 
               setStep("method");
             }}
             onSubmit={handleCardConfirm}
+            onBusyChange={setCardBusy}
           />
         )}
 

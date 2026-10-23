@@ -41,6 +41,7 @@ export function OnlineQueue({
   closedMessage,
   canManage,
   reader,
+  squareTerminal,
   newMessages = 0,
 }: {
   initial: QueueOrder[];
@@ -49,6 +50,8 @@ export function OnlineQueue({
   closedMessage: string | null;
   canManage: boolean;
   reader: { paired: boolean; simulated: boolean };
+  /** A Square Terminal is paired for the register: card at pickup goes there. */
+  squareTerminal: boolean;
   newMessages?: number;
 }) {
   const [orders, setOrders] = useState(initial);
@@ -96,6 +99,7 @@ export function OnlineQueue({
       new Date(d),
     );
   const ready = orders.filter((o) => o.status === "READY");
+  const waitingBy = orders.find((o) => o.status === "OPEN" && o.cardBy)?.cardBy ?? "the card company";
   const done = orders.filter((o) => o.status === "COMPLETED").reverse();
   const waiting = orders.filter((o) => o.status === "OPEN");
 
@@ -150,7 +154,7 @@ export function OnlineQueue({
             )}
             {canManage && (
               <Link
-                href="/admin/card-reader"
+                href={squareTerminal ? "/admin/square" : "/admin/card-reader"}
                 className="flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 font-sans text-xs font-medium text-mondy-ink ring-1 ring-mondy-border transition hover:bg-mondy-cream"
               >
                 <CreditCard className="h-3.5 w-3.5" aria-hidden />
@@ -184,10 +188,10 @@ export function OnlineQueue({
             Waiting for card payment <span className="text-mondy-muted">{waiting.length}</span>
           </h2>
           <p className="mt-0.5 font-sans text-sm text-mondy-muted">
-            The customer went to Clover to pay. Paid orders move to &ldquo;To make&rdquo; by themselves.
+            The customer went to {waitingBy}&apos;s secure page to pay. Paid orders move to &ldquo;To make&rdquo; by themselves.
             {canManage
-              ? " If one stays here, check Clover → Sales activity and confirm it."
-              : " If one stays here, ask a manager to check Clover."}
+              ? ` If one stays here, check ${waitingBy === "Square" ? "Square → Transactions" : waitingBy === "Clover" ? "Clover → Sales activity" : "the card dashboard"} and confirm it.`
+              : ` If one stays here, ask a manager to check ${waitingBy}.`}
           </p>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {waiting.map((o) => (
@@ -212,12 +216,12 @@ export function OnlineQueue({
       <div className="mx-auto grid max-w-5xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-2">
         <Column title="To make" count={toMake.length} empty="No orders waiting.">
           {toMake.map((o) => (
-            <OrderCard key={o.id} order={o} isNew={newIds.has(o.id)} time={time} onUpdated={replace} reader={reader} />
+            <OrderCard key={o.id} order={o} isNew={newIds.has(o.id)} time={time} onUpdated={replace} reader={reader} squareTerminal={squareTerminal} />
           ))}
         </Column>
         <Column title="Ready for pickup" count={ready.length} empty="Nothing waiting on the shelf.">
           {ready.map((o) => (
-            <OrderCard key={o.id} order={o} isNew={false} time={time} onUpdated={replace} reader={reader} />
+            <OrderCard key={o.id} order={o} isNew={false} time={time} onUpdated={replace} reader={reader} squareTerminal={squareTerminal} />
           ))}
         </Column>
       </div>
@@ -305,12 +309,14 @@ function OrderCard({
   time,
   onUpdated,
   reader,
+  squareTerminal,
 }: {
   order: QueueOrder;
   isNew: boolean;
   time: (d: Date | string) => string;
   onUpdated: (o: QueueOrder) => void;
   reader: { paired: boolean; simulated: boolean };
+  squareTerminal: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -444,7 +450,7 @@ function OrderCard({
                 disabled={pending}
                 className={`${btn} ${reader.paired ? "bg-white text-mondy-ink ring-1 ring-mondy-border hover:bg-mondy-cream" : "bg-mondy-ink text-white hover:bg-black"}`}
               >
-                {reader.paired ? "Card, other machine" : "Paid card"}
+                {squareTerminal ? `Card on Square Terminal` : reader.paired ? "Card, other machine" : "Paid card"}
               </button>
               <button
                 type="button"
@@ -467,6 +473,7 @@ function OrderCard({
             <PaymentProof
               method="CARD_PRESENT"
               total={order.total}
+              orderId={order.id}
               pending={pending}
               error={error}
               onBack={() => setProvingCard(false)}
@@ -542,7 +549,7 @@ function WaitingCard({
             <>
               <span className="text-xs">
                 {confirm === "paid"
-                  ? `You see ${formatMoney(order.total)} paid in Clover for ${order.code}?`
+                  ? `You see ${formatMoney(order.total)} paid in ${order.cardBy ?? "the card dashboard"} for ${order.code}?`
                   : "Customer didn't pay. Remove this order?"}
               </span>
               <button type="button" disabled={pending} onClick={() => act(confirm)} className={`${btn} bg-mondy-ink text-white hover:bg-black`}>
@@ -555,7 +562,7 @@ function WaitingCard({
           ) : (
             <>
               <button type="button" disabled={pending} onClick={() => setConfirm("paid")} className={`${btn} bg-mondy-red text-white hover:bg-mondy-red-dark`}>
-                Paid: checked in Clover
+                Paid: checked in {order.cardBy ?? "dashboard"}
               </button>
               <button type="button" disabled={pending} onClick={() => setConfirm("cancel")} className={`${btn} ring-1 ring-mondy-border hover:bg-mondy-cream`}>
                 Not paid

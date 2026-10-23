@@ -321,6 +321,7 @@ enum PaymentMethod {
   CARD_PRESENT      // chip/tap/swipe via Epos Now terminal
   STRIPE_ONLINE     // online card payment via Stripe
   CLOVER_ONLINE     // online card payment on Clover's Hosted Checkout page
+  SQUARE_ONLINE     // online card payment on Square's checkout page (payment link)
   SQUARE_TERMINAL   // tapped/inserted on a Square Terminal (self-checkout)
   CARD_MANUAL       // keyed in (phone orders, card not present)
   MOBILE_WALLET     // Apple Pay / Google Pay / Samsung Pay (via Epos Now)
@@ -461,6 +462,8 @@ model RestaurantSettings {
   kioskAutoPrint          Boolean  @default(true)      // print the receipt without asking
   squareDeviceId          String?  // paired Square Terminal (device id / serial)
   squareDeviceName        String?
+  registerSquareDeviceId   String?  // Square Terminal at the register (cashier card payments)
+  registerSquareDeviceName String?
   receiptPrinterMac       String?  // Star CloudPRNT printer that checked in (shown in settings)
   receiptPrinterSeenAt    DateTime?
   labelSize               String   @default("2.25x1.25") // sticker size for barcode labels
